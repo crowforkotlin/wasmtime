@@ -53,10 +53,25 @@ if [[ "$build" = *-min ]]; then
   export CARGO_PROFILE_RELEASE_LTO=true
   build_std=-Zbuild-std=std,panic_abort
   build_std_features=-Zbuild-std-features=std_detect_dlsym_getauxval
-  flags="$build_std $build_std_features --no-default-features --features disable-logging"
-  cmake_flags="-DWASMTIME_DISABLE_ALL_FEATURES=ON"
-  cmake_flags="$cmake_flags -DWASMTIME_FEATURE_DISABLE_LOGGING=ON"
-  cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std;$build_std_features"
+  # --------------- Min for Kotlin Wasi
+  # CLI Config: Includes Compiler (Cranelift) & AOT Tools (Compile)
+  # Used on host to pre-compile .wasm into .cwasm
+  flags="$build_std $build_std_features --no-default-features --features disable-logging,gc,gc-drc,compile,cranelift"
+
+  # C-API Config: Runtime-only (No JIT/Cranelift)
+  # - WASMTIME_FEATURE_*: Controls the C-API interface exposure.
+  # - gc-drc: Explicitly injected via Cargo options to prevent runtime Panics (Missing Collector).
+  c_api_cargo_args="$build_std;$build_std_features;--features;gc-drc"
+  cmake_flags="-DWASMTIME_FEATURE_WASI=ON \
+               -DWASMTIME_FEATURE_GC=ON \
+               -DWASMTIME_FEATURE_CRANELIFT=OFF \
+               -DWASMTIME_FEATURE_COMPONENT_MODEL=OFF \
+               -DWASMTIME_FEATURE_DISABLE_LOGGING=ON \
+               -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$c_api_cargo_args"
+  #flags="$build_std $build_std_features --no-default-features --features disable-logging"
+  #cmake_flags="-DWASMTIME_DISABLE_ALL_FEATURES=ON"
+  #cmake_flags="$cmake_flags -DWASMTIME_FEATURE_DISABLE_LOGGING=ON"
+  #cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std;$build_std_features"
 else
   # For release builds the CLI is built a bit more feature-ful than the Cargo
   # defaults to provide artifacts that can do as much as possible.
