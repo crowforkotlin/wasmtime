@@ -56,7 +56,7 @@ if [[ "$build" = *-min ]]; then
   # --------------- Min for Kotlin Wasi
   # CLI Config: Includes Compiler (Cranelift) & AOT Tools (Compile)
   # Used on host to pre-compile .wasm into .cwasm
-  flags="$build_std $build_std_features --no-default-features --features disable-logging,gc,gc-drc,compile,cranelift"
+  flags="$build_std $build_std_features --no-default-features --features disable-logging,gc,gc-drc,compile,cranelift,run,stack-switching"
 
   # C-API Config: Runtime-only (No JIT/Cranelift)
   # - WASMTIME_FEATURE_*: Controls the C-API interface exposure.
@@ -64,8 +64,9 @@ if [[ "$build" = *-min ]]; then
   c_api_cargo_args="$build_std;$build_std_features;--features;gc-drc"
   cmake_flags="-DWASMTIME_FEATURE_WASI=ON \
                -DWASMTIME_FEATURE_GC=ON \
-               -DWASMTIME_FEATURE_CRANELIFT=OFF \
+               -DWASMTIME_FEATURE_CRANELIFT=ON \
                -DWASMTIME_FEATURE_COMPONENT_MODEL=OFF \
+               -DWASMTIME_FEATURE_EXCEPTIONS=ON \
                -DWASMTIME_FEATURE_DISABLE_LOGGING=ON \
                -DWASMTIME_FEATURE_ASYNC=OFF \
                -DWASMTIME_FEATURE_THREADS=OFF \
