@@ -67,7 +67,15 @@ if [[ "$build" = *-min ]]; then
                -DWASMTIME_FEATURE_CRANELIFT=OFF \
                -DWASMTIME_FEATURE_COMPONENT_MODEL=OFF \
                -DWASMTIME_FEATURE_DISABLE_LOGGING=ON \
+               -DWASMTIME_FEATURE_ASYNC=OFF \
+               -DWASMTIME_FEATURE_THREADS=OFF \
+               -DWASMTIME_FEATURE_POOLING_ALLOCATOR=OFF \
                -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$c_api_cargo_args"
+   # 【关键：只针对 Android 增加 16KB 对齐参数】
+  #if [[ "$target" == *"-android" ]]; then
+  #    cmake_flags="$cmake_flags -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=4096"
+  #    cmake_flags="$cmake_flags -DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=4096"
+  #fi
   #flags="$build_std $build_std_features --no-default-features --features disable-logging"
   #cmake_flags="-DWASMTIME_DISABLE_ALL_FEATURES=ON"
   #cmake_flags="$cmake_flags -DWASMTIME_FEATURE_DISABLE_LOGGING=ON"
