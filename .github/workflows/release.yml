@@ -13,9 +13,6 @@ permissions:
   contents: write
 
 jobs:
-  # ===================================================
-  # 任务 1: 构建并打包
-  # ===================================================
   build:
     name: Build ${{ matrix.build }}
     runs-on: ${{ matrix.os }}
@@ -35,6 +32,14 @@ jobs:
           - build: x86_64-macos
             os: macos-latest
             target: x86_64-apple-darwin
+          # Android (AArch64)
+          - build: aarch64-android
+            os: ubuntu-latest
+            target: aarch64-linux-android
+          # iOS (AArch64) - 如果你想加 iOS 可以解开下面注释
+          # - build: aarch64-ios
+          #   os: macos-latest
+          #   target: aarch64-apple-ios
 
     defaults:
       run:
@@ -45,8 +50,6 @@ jobs:
         with:
           submodules: true
 
-      # 【新增步骤】赋予 CI 目录下脚本执行权限
-      # 这能解决 "Permission denied" 错误
       - name: Grant Execution Permissions
         run: chmod +x ci/*.sh
 
@@ -54,55 +57,84 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
+          components: rust-src
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
-      - name: Check Tools
+      # === Android 环境配置 ===
+      - name: Setup Android Environment
+        if: contains(matrix.target, 'android')
         run: |
-          cmake --version
-          rustc --version
+          if [ -z "$ANDROID_NDK_HOME" ]; then echo "Error: NDK not found"; exit 1; fi
+          # Ubuntu Runner 的 NDK 是 linux-x86_64
+          TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          API=24
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android${API}-clang" >> $GITHUB_ENV
+          echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android${API}-clang++" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android${API}-clang" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C link-arg=-z -C link-arg=max-page-size=16384" >> $GITHUB_ENV
 
-      # === 阶段 1: 构建 Normal 版 ===
-      - name: Build Normal
+      # ==========================================
+      # 流程 1: Cranelift (JIT) 构建
+      # ==========================================
+      - name: Build Cranelift (Normal & Min)
+        if: "!contains(matrix.target, 'ios')"
         env:
           RUSTC_BOOTSTRAP: 1
-        run: |
-          ./ci/build-release-artifacts.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Package Normal
-        env:
           GITHUB_REF: refs/heads/release-simulate
         run: |
+          # 1. Normal
+          echo ">>> Building Cranelift Normal..."
+          ./ci/build-release-artifacts.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
           ./ci/build-tarballs.sh "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Stash Normal Artifacts
-        run: |
+          
           mkdir -p bins-${{ matrix.build }}
           mv dist/* bins-${{ matrix.build }}/
           rm -rf dist
-
-      # === 阶段 2: 构建 Min 版 ===
-      - name: Build Min
-        env:
-          RUSTC_BOOTSTRAP: 1
-        run: |
+          
+          # 2. Min
+          echo ">>> Building Cranelift Min..."
           ./ci/build-release-artifacts.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Package Min
-        env:
-          GITHUB_REF: refs/heads/release-simulate
-        run: |
           ./ci/build-tarballs.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
-
-      - name: Stash Min Artifacts
-        run: |
+          
           mkdir -p bins-${{ matrix.build }}-min
           mv dist/* bins-${{ matrix.build }}-min/
           rm -rf dist
 
-      # === 上传产物 ===
+      # ==========================================
+      # 流程 2: Pulley (Interpreter) 构建
+      # ==========================================
+      - name: Build Pulley (Normal & Min)
+        env:
+          RUSTC_BOOTSTRAP: 1
+          GITHUB_REF: refs/heads/release-simulate
+          # 定义一个带后缀的 build name，这样 build-tarballs.sh 生成的包名就会带上 -pulley
+          PULLEY_BUILD: ${{ matrix.build }}-pulley
+        run: |
+          # 1. Normal
+          echo ">>> Building Pulley Normal..."
+          ./ci/build-release-artifacts.sh pulley "$PULLEY_BUILD" "${{ matrix.target }}"
+          ./ci/build-tarballs.sh "$PULLEY_BUILD" "${{ matrix.target }}"
+          
+          mkdir -p bins-$PULLEY_BUILD
+          mv dist/* bins-$PULLEY_BUILD/
+          rm -rf dist
+          
+          # 2. Min
+          echo ">>> Building Pulley Min..."
+          ./ci/build-release-artifacts.sh pulley-min "$PULLEY_BUILD" "${{ matrix.target }}"
+          ./ci/build-tarballs.sh "$PULLEY_BUILD-min" "${{ matrix.target }}"
+          
+          mkdir -p bins-$PULLEY_BUILD-min
+          mv dist/* bins-$PULLEY_BUILD-min/
+          rm -rf dist
+
+      # ==========================================
+      # 上传所有产物
+      # ==========================================
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -110,9 +142,6 @@ jobs:
           path: bins-*/**
           retention-days: 1
 
-  # ===================================================
-  # 任务 2: 合并并发布
-  # ===================================================
   release:
     name: Merge and Publish
     needs: build
@@ -120,7 +149,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 【新增步骤】Merge 脚本也需要执行权限
       - name: Grant Execution Permissions
         run: chmod +x ci/*.sh
 
@@ -131,11 +159,14 @@ jobs:
 
       - name: Flatten Artifacts Structure
         run: |
+          # 把下载下来的文件夹展平
           mv */bins-* . || true
           ls -R bins-*
 
       - name: Merge Artifacts
         run: |
+          # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
+          # 这里 Cranelift 和 Pulley 的包名不同 (xxx vs xxx-pulley)，所以互不干扰
           ./ci/merge-artifacts.sh
           ls -l dist/
 
