@@ -36,3 +36,5 @@ testcase*.dna
 testcase*.json
 perf.data*
 tmp
+dist
+/bins-*/
