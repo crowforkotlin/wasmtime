@@ -60,13 +60,13 @@ case $build in
     cp target/$target/release/wasmtime.exe tmp/$bin_pkgname/wasmtime$min.exe
     fmt=zip
 
-    if [ "$min" = "" ]; then
+  #  if [ "$min" = "" ]; then
       # Generate a `*.msi` installer for Windows as well
-      export WT_VERSION=`cat Cargo.toml | sed -n 's/^version = "\([^"]*\)".*/\1/p'`
-      "$WIX/bin/candle" -arch x64 -out target/wasmtime.wixobj ci/wasmtime.wxs
-      "$WIX/bin/light" -out dist/$bin_pkgname.msi target/wasmtime.wixobj -ext WixUtilExtension
-      rm dist/$bin_pkgname.wixpdb
-    fi
+  #    export WT_VERSION=`cat Cargo.toml | sed -n 's/^version = "\([^"]*\)".*/\1/p'`
+  #    "$WIX/bin/candle" -arch x64 -out target/wasmtime.wixobj ci/wasmtime.wxs
+  #    "$WIX/bin/light" -out dist/$bin_pkgname.msi target/wasmtime.wixobj -ext WixUtilExtension
+  #    rm dist/$bin_pkgname.wixpdb
+  #  fi
     ;;
 
   # Skip the MSI for non-x86_64 builds of Windows
@@ -90,9 +90,18 @@ mktarball() {
   if [ "$fmt" = "tar" ]; then
     tar -czvf dist/$dir.tar.gz -C tmp $dir
   else
-    # Note that this runs on Windows, and it looks like GitHub Actions doesn't
-    # have a `zip` tool there, so we use something else
-    (cd tmp && 7z a ../dist/$dir.zip $dir/)
+    # Windows ZIP 打包逻辑
+    if command -v 7z >/dev/null 2>&1; then
+       # 优先使用 7z (最快)
+       (cd tmp && 7z a ../dist/$dir.zip $dir/)
+    elif command -v zip >/dev/null 2>&1; then
+       # 其次使用 Git Bash 自带的 zip
+       (cd tmp && zip -r ../dist/$dir.zip $dir/)
+    else
+       # 【保底】实在没办法，就用 tar 打包成 .tar.gz，总比报错好
+       echo "Warning: No zip tool found. Falling back to tar.gz"
+       tar -czvf dist/$dir.tar.gz -C tmp $dir
+    fi
   fi
 }
 

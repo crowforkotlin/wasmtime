@@ -1,91 +1,125 @@
 #!/bin/bash
 
 # A script to build the release artifacts of Wasmtime into the `target`
-# directory. For now this is the CLI and the C API. Note that this script only
-# produces the artifacts through Cargo and doesn't package things up. That's
-# intended for the `build-tarballs.sh` script.
+# directory.
 #
-# This script takes a Rust target as its first input and optionally a parameter
-# afterwards which can be "-min" to indicate that a minimal build should be
-# produced with as many features as possible stripped out.
+# Arguments:
+# $1: Build Configuration (e.g., cranelift-min, pulley-min, cranelift, pulley)
+# $2: [Optional] OS Tag (e.g., windows) - ignored by logic, but used in CI
+# $3: [Optional] Rust Target Triple. If $3 is empty, $2 is treated as the target.
 
 set -ex
 
+# === Argument Parsing Logic ===
 build=$1
-target=$2
-wrapper=""
-
-# If `$DOCKER_IMAGE` is set then run the build inside of that docker container
-# instead of on the host machine. In CI this uses `./ci/docker/*/Dockerfile` to
-# have precise glibc requirements for Linux platforms for example.
-if [ "$DOCKER_IMAGE" != "" ]; then
-  if [ -f "$DOCKER_IMAGE" ]; then
-    docker build --tag build-image --file $DOCKER_IMAGE ci/docker
-    DOCKER_IMAGE=build-image
-  fi
-
-  # Inherit the environment's rustc and env vars related to cargo/rust, and then
-  # otherwise re-execute ourselves and we'll be missing `$DOCKER_IMAGE` in the
-  # container so we'll continue below.
-  exec docker run --interactive \
-    --volume `pwd`:`pwd` \
-    --volume `rustc --print sysroot`:/rust:ro \
-    --workdir `pwd` \
-    --interactive \
-    --env-file <(env | grep 'CARGO\|RUST') \
-    $DOCKER_IMAGE \
-    bash -c "PATH=\$PATH:/rust/bin RUSTFLAGS=\"\$RUSTFLAGS \$EXTRA_RUSTFLAGS\" `pwd`/$0 $*"
+if [ -n "$3" ]; then
+  # 3 arguments provided: build_mode os_tag target
+  target=$3
+else
+  # 2 arguments provided: build_mode target
+  target=$2
 fi
 
-# Default build flags for release artifacts. Leave debugging for
-# builds-from-source which have richer information anyway, and additionally the
-# CLI won't benefit from catching unwinds and neither will the C API so use
-# panic=abort in both situations.
+if [ -z "$target" ]; then
+  echo "Error: Target architecture must be provided."
+  exit 1
+fi
+
+echo "Building with mode: $build"
+echo "Target architecture: $target"
+
+# Default build flags for release artifacts.
 export CARGO_PROFILE_RELEASE_STRIP=debuginfo
 export CARGO_PROFILE_RELEASE_PANIC=abort
 
-if [[ "$build" = *-min ]]; then
-  # Configure a whole bunch of compile-time options which help reduce the size
-  # of the binary artifact produced.
+# Initialize variables
+flags=""
+cmake_flags=""
+build_std=""
+build_std_features=""
+
+# --- Configuration Logic ---
+
+if [[ "$build" == *-min ]]; then
+  # === Minimal Build Configuration ===
+  
+  # Optimization flags for size and speed
   export CARGO_PROFILE_RELEASE_OPT_LEVEL=s
   export RUSTFLAGS="-Zlocation-detail=none $RUSTFLAGS"
   export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
   export CARGO_PROFILE_RELEASE_LTO=true
-  build_std=-Zbuild-std=std,panic_abort
-  build_std_features=-Zbuild-std-features=std_detect_dlsym_getauxval
-  # --------------- Min for Kotlin Wasi
-  # CLI Config: Includes Compiler (Cranelift) & AOT Tools (Compile)
-  # Used on host to pre-compile .wasm into .cwasm
-  flags="$build_std $build_std_features --no-default-features --features disable-logging,gc,gc-drc,compile,cranelift,run,stack-switching"
+  
+  # Build standard library from source for size reduction
+  build_std="-Zbuild-std=std,panic_abort"
+  build_std_features="-Zbuild-std-features=std_detect_dlsym_getauxval"
+  
+  # Base CMake flags: Disable all features first
+  # Note: This automatically adds `--no-default-features` to the C-API cargo build
+  cmake_flags="-DWASMTIME_DISABLE_ALL_FEATURES=ON"
+  cmake_flags="$cmake_flags -DWASMTIME_FEATURE_DISABLE_LOGGING=ON"
+  
+  # Pass build-std flags to C-API via USER_CARGO_BUILD_OPTIONS
+  # We use semicolons for the CMake list.
+  cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std;$build_std_features"
 
-  # C-API Config: Runtime-only (No JIT/Cranelift)
-  # - WASMTIME_FEATURE_*: Controls the C-API interface exposure.
-  # - gc-drc: Explicitly injected via Cargo options to prevent runtime Panics (Missing Collector).
-  c_api_cargo_args="$build_std;$build_std_features;--features;gc-drc"
-  cmake_flags="-DWASMTIME_FEATURE_WASI=ON \
-               -DWASMTIME_FEATURE_GC=ON \
-               -DWASMTIME_FEATURE_CRANELIFT=ON \
-               -DWASMTIME_FEATURE_COMPONENT_MODEL=OFF \
-               -DWASMTIME_FEATURE_EXCEPTIONS=ON \
-               -DWASMTIME_FEATURE_DISABLE_LOGGING=ON \
-               -DWASMTIME_FEATURE_ASYNC=OFF \
-               -DWASMTIME_FEATURE_THREADS=OFF \
-               -DWASMTIME_FEATURE_POOLING_ALLOCATOR=OFF \
-               -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$c_api_cargo_args"
-   # 【关键：只针对 Android 增加 16KB 对齐参数】
-  #if [[ "$target" == *"-android" ]]; then
-  #    cmake_flags="$cmake_flags -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=4096"
-  #    cmake_flags="$cmake_flags -DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=4096"
-  #fi
-  #flags="$build_std $build_std_features --no-default-features --features disable-logging"
-  #cmake_flags="-DWASMTIME_DISABLE_ALL_FEATURES=ON"
-  #cmake_flags="$cmake_flags -DWASMTIME_FEATURE_DISABLE_LOGGING=ON"
-  #cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std;$build_std_features"
+  # Base features for CLI
+  cli_base_features="--no-default-features --features disable-logging"
+
+  if [[ "$build" == "cranelift-min" ]]; then
+    # --- Cranelift Min ---
+    
+    # 1. CLI Flags: Pass the exact features you requested
+    # run, compile, gc, gc-drc, parallel-compilation, stack-switching, pooling-allocator, component-model, component-model-async
+    cli_feat_list="run,compile,gc,gc-drc,parallel-compilation,stack-switching,pooling-allocator,component-model,component-model-async"
+    flags="$cli_base_features --features $cli_feat_list"
+
+    # 2. C-API Flags (CMake): Map CLI features to C-API equivalents
+    # Note: 'run' is not a C-API feature.
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_CRANELIFT=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_GC=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_GC_DRC=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_PARALLEL_COMPILATION=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_POOLING_ALLOCATOR=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_COMPONENT_MODEL=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_ASYNC=ON" 
+
+  elif [[ "$build" == "pulley-min" ]]; then
+    # --- Pulley Min ---
+    
+    # 1. CLI Flags
+    cli_feat_list="run,pulley,gc,gc-drc,stack-switching,pooling-allocator,component-model,component-model-async"
+    flags="$cli_base_features --features $cli_feat_list"
+
+    # 2. C-API Flags (CMake)
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_PULLEY=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_GC=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_GC_DRC=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_POOLING_ALLOCATOR=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_COMPONENT_MODEL=ON"
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_ASYNC=ON"
+    
+  else
+    echo "Unknown min configuration: $build"
+    exit 1
+  fi
+
+  # Add build-std to CLI flags
+  flags="$build_std $build_std_features $flags"
+
 else
-  # For release builds the CLI is built a bit more feature-ful than the Cargo
-  # defaults to provide artifacts that can do as much as possible.
-  bin_flags="--features all-arch,component-model"
+  # === Full Build Configuration ===
+  
+  if [[ "$build" == "pulley" ]]; then
+    flags="--features all-arch,component-model,pulley"
+    # Ensure Pulley is enabled in C-API
+    cmake_flags="$cmake_flags -DWASMTIME_FEATURE_PULLEY=ON"
+  else
+    # Default / cranelift full
+    flags="--features all-arch,component-model"
+  fi
 fi
+
+# --- Platform Specific Overrides ---
 
 if [[ "$target" = "x86_64-pc-windows-msvc" ]]; then
   # Avoid emitting `/DEFAULTLIB:MSVCRT` into the static library by using clang.
@@ -93,37 +127,39 @@ if [[ "$target" = "x86_64-pc-windows-msvc" ]]; then
   export CXX=clang++
 fi
 
-cargo build --release $flags --target $target -p wasmtime-cli $bin_flags --features run
+# --- Build CLI ---
+echo "Running Cargo Build for CLI..."
+cargo build --release --target "$target" -p wasmtime-cli $flags
 
-# For the C API force unwind tables to be emitted to make the generated objects
-# more flexible. Embedders can always build without this but this enables
-# libunwind to produce better backtraces by default when Wasmtime is linked into
-# a different project that wants to unwind.
+# --- Build C API ---
+echo "Running CMake Build for C-API..."
+
+# For the C API force unwind tables to be emitted
 export RUSTFLAGS="$RUSTFLAGS -C force-unwind-tables"
 
-# Shrink the size of `*.a` artifacts without spending too much extra time in CI.
-# See #11476 for some more context. Here Windows builds achieve this with 1 CGU
-# which results in modest size gains, and other platforms use LTO to achieve
-# much more significant size gains. The reason the platforms are different is
-# that CI is extremely slow on Windows, almost 2x slower, so this is an attempt
-# to keep CI cycle time under control.
-case $build in
-  *-mingw* | *-windows*)
-    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
-    ;;
-  *)
-    export CARGO_PROFILE_RELEASE_LTO=true
-    ;;
-esac
+# Shrink the size of `*.a` artifacts for non-min builds
+if [[ "$build" != *-min ]]; then
+  case $target in
+    *-pc-windows-msvc | *-pc-windows-gnu)
+      export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+      ;;
+    *)
+      export CARGO_PROFILE_RELEASE_LTO=true
+      ;;
+  esac
+fi
 
 mkdir -p target/c-api-build
 cd target/c-api-build
+
+# Invoke CMake
 cmake \
   -G Ninja \
   ../../crates/c-api \
   $cmake_flags \
   -DCMAKE_BUILD_TYPE=Release \
-  -DWASMTIME_TARGET=$target \
+  -DWASMTIME_TARGET="$target" \
   -DCMAKE_INSTALL_PREFIX=../c-api-install \
   -DCMAKE_INSTALL_LIBDIR=../c-api-install/lib
+
 cmake --build . --target install

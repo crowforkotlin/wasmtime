@@ -1,0 +1,149 @@
+name: Simple Release
+
+# 触发条件：当你推送类似 v40.0.0 这样的 tag 时触发
+on:
+  push:
+    tags:
+      - 'v*'
+  # 也可以手动触发进行测试
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ===================================================
+  # 任务 1: 构建并打包 (Windows, Linux, macOS 并行)
+  # ===================================================
+  build:
+    name: Build ${{ matrix.build }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - build: x86_64-windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # Linux (如果你不需要可以注释掉)
+          - build: x86_64-linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          # macOS (如果你不需要可以注释掉)
+          - build: x86_64-macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+
+    # 强制在 Windows 上使用 bash，因为你的脚本是 .sh
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # 安装 Rust Nightly (为了配合 RUSTC_BOOTSTRAP=1 或者脚本里的需求)
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+
+      # 安装构建工具 (Linux 需要 Ninja，Windows/Mac 自带或不需要)
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ninja-build
+
+      # 安装 CMake (通常 GitHub Runner 预装了，但以防万一)
+      - name: Setup CMake
+        uses: jwlawrence/cmake-adapter@v1
+        with:
+          cmake-version: '3.20.0'
+
+      # === 阶段 1: 构建 Normal 版 ===
+      - name: Build Normal
+        env:
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          ./ci/build-release-artifacts.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Package Normal
+        # 跳过脚本这是正式发布分支，以去除 "-dev" 后缀
+        env:
+          GITHUB_REF: refs/heads/release-simulate
+        run: |
+          ./ci/build-tarballs.sh "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Stash Normal Artifacts
+        run: |
+          mkdir -p bins-${{ matrix.build }}
+          mv dist/* bins-${{ matrix.build }}/
+          rm -rf dist
+
+      # === 阶段 2: 构建 Min 版 ===
+      - name: Build Min
+        env:
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          ./ci/build-release-artifacts.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Package Min
+        env:
+          GITHUB_REF: refs/heads/release-simulate
+        run: |
+          ./ci/build-tarballs.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
+
+      - name: Stash Min Artifacts
+        run: |
+          mkdir -p bins-${{ matrix.build }}-min
+          mv dist/* bins-${{ matrix.build }}-min/
+          rm -rf dist
+
+      # === 上传产物到 GitHub Actions 临时存储 ===
+      # 这样下一个 Release 任务才能拿到它们
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bins-${{ matrix.build }}
+          path: bins-*/**
+          retention-days: 1
+
+  # ===================================================
+  # 任务 2: 合并并发布
+  # ===================================================
+  release:
+    name: Merge and Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 下载所有 Build 任务上传的产物
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      # download-artifact 会多套一层文件夹，我们需要调整一下结构
+      # 也就是把 bins-x86_64-windows/bins-x86_64-windows/* 移动到当前目录
+      - name: Flatten Artifacts Structure
+        run: |
+          mv */bins-* . || true
+          ls -R bins-*
+
+      # 运行合并脚本
+      - name: Merge Artifacts
+        run: |
+          ./ci/merge-artifacts.sh
+          ls -l dist/
+
+      # 发布到 GitHub Releases
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
+          draft: true       # 设为草稿，方便你发布前检查
+          prerelease: false # 是否为预发布版本
