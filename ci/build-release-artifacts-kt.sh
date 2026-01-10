@@ -85,7 +85,7 @@ if [[ "$build" == *-min ]]; then
 
   elif [[ "$build" == "pulley-min" ]]; then
     # --- Pulley Min ---
-    f
+
     # 1. CLI Flags
     cli_feat_list="run,pulley,gc,gc-drc,stack-switching,pooling-allocator,component-model,component-model-async"
     flags="$cli_base_features --features $cli_feat_list"
