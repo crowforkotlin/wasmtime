@@ -1,10 +1,14 @@
 name: Simple Release
 
 # 触发条件：当你推送类似 v40.0.0 这样的 tag 时触发
+#on:
+#  push:
+#    tags:
+#      - 'v*'
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - 'main-kt'
   # 也可以手动触发进行测试
   workflow_dispatch:
 
