@@ -24,27 +24,32 @@ jobs:
           - build: x86_64-windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
+
           # Linux
           - build: x86_64-linux
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - build: aarch64-linux
+            os: ubuntu-24.04-arm64
+            target: aarch64-unknown-linux-gnu
+
           # macOS
           - build: x86_64-macos
             os: macos-latest
             target: x86_64-apple-darwin
-          # macOS (Apple Silicon / aarch64)
           - build: aarch64-macos
             os: macos-latest # 或者明确指定 macos-14
             target: aarch64-apple-darwin
+
           # Android (AArch64)
           - build: aarch64-android
             os: ubuntu-latest
             target: aarch64-linux-android
-          # iOS (AArch64) - 如果你想加 iOS 可以解开下面注释
+
+          # iOS
           - build: aarch64-ios
             os: macos-latest
             target: aarch64-apple-ios
-          # iOS 模拟器 (ARM64 - 适用于 M 系列芯片 Mac)
           - build: aarch64-ios-sim
             os: macos-latest
             target: aarch64-apple-ios-sim
