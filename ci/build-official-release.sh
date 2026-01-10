@@ -23,11 +23,11 @@ echo ">>> [1/3] Building Normal Artifacts ($BUILD_NAME)..."
 
 # 1.1 编译
 # 注意：这里传给 build-release-artifacts 的第二个参数用于内部标识，我们用完整名
-RUSTC_BOOTSTRAP=1 rustup run nightly bash ./ci/build-release-artifacts.sh cranelift $BUILD_NAME $TARGET
+RUSTC_BOOTSTRAP=1 rustup run nightly bash ./ci/build-release-artifacts-kt.sh cranelift $BUILD_NAME $TARGET
 
 # 1.2 打包
 # 这会生成 dist/wasmtime-vX.Y.Z-x86_64-windows.zip 等
-bash ./ci/build-tarballs.sh $BUILD_NAME $TARGET
+bash ./ci/build-tarballs-kt.sh $BUILD_NAME $TARGET
 
 # 1.3 模拟 CI 上传
 # 必须移动到 bins-$BUILD_NAME 文件夹，否则 merge 脚本找不到
@@ -41,11 +41,11 @@ echo ">>> [2/3] Building Min Artifacts ($BUILD_NAME-min)..."
 
 # 2.1 编译
 # 这会覆盖 target/ 下的文件，但没关系，上一轮的已经打包移走了
-RUSTC_BOOTSTRAP=1 rustup run nightly bash ./ci/build-release-artifacts.sh cranelift-min $BUILD_NAME $TARGET
+RUSTC_BOOTSTRAP=1 rustup run nightly bash ./ci/build-release-artifacts-kt.sh cranelift-min $BUILD_NAME $TARGET
 
 # 2.2 打包
 # 注意参数必须加 -min
-bash ./ci/build-tarballs.sh ${BUILD_NAME}-min $TARGET
+bash ./ci/build-tarballs-kt.sh ${BUILD_NAME}-min $TARGET
 
 # 2.3 模拟 CI 上传
 # 必须移动到 bins-$BUILD_NAME-min 文件夹
@@ -58,7 +58,7 @@ rm -rf dist
 echo ">>> [3/3] Merging Artifacts..."
 
 # 这个脚本会扫描当前目录下的 bins-* 文件夹进行合并
-bash ./ci/merge-artifacts.sh
+bash ./ci/merge-artifacts-kt.sh
 
 # ================= 完成 =================
 echo ">>> Done!"

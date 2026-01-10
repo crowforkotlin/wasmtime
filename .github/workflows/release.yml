@@ -32,14 +32,22 @@ jobs:
           - build: x86_64-macos
             os: macos-latest
             target: x86_64-apple-darwin
+          # macOS (Apple Silicon / aarch64)
+          - build: aarch64-macos
+            os: macos-latest # 或者明确指定 macos-14
+            target: aarch64-apple-darwin
           # Android (AArch64)
           - build: aarch64-android
             os: ubuntu-latest
             target: aarch64-linux-android
           # iOS (AArch64) - 如果你想加 iOS 可以解开下面注释
-          # - build: aarch64-ios
-          #   os: macos-latest
-          #   target: aarch64-apple-ios
+          - build: aarch64-ios
+            os: macos-latest
+            target: aarch64-apple-ios
+          # iOS 模拟器 (ARM64 - 适用于 M 系列芯片 Mac)
+          - build: aarch64-ios-sim
+            os: macos-latest
+            target: aarch64-apple-ios-sim
 
     defaults:
       run:
@@ -88,8 +96,8 @@ jobs:
         run: |
           # 1. Normal
           echo ">>> Building Cranelift Normal..."
-          ./ci/build-release-artifacts.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
-          ./ci/build-tarballs.sh "${{ matrix.build }}" "${{ matrix.target }}"
+          ./ci/build-release-artifacts-kt.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "${{ matrix.build }}" "${{ matrix.target }}"
           
           mkdir -p bins-${{ matrix.build }}
           mv dist/* bins-${{ matrix.build }}/
@@ -97,8 +105,8 @@ jobs:
           
           # 2. Min
           echo ">>> Building Cranelift Min..."
-          ./ci/build-release-artifacts.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
-          ./ci/build-tarballs.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
+          ./ci/build-release-artifacts-kt.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
           
           mkdir -p bins-${{ matrix.build }}-min
           mv dist/* bins-${{ matrix.build }}-min/
@@ -111,13 +119,13 @@ jobs:
         env:
           RUSTC_BOOTSTRAP: 1
           GITHUB_REF: refs/heads/release-simulate
-          # 定义一个带后缀的 build name，这样 build-tarballs.sh 生成的包名就会带上 -pulley
+          # 定义一个带后缀的 build name，这样 build-tarballs-kt.sh 生成的包名就会带上 -pulley
           PULLEY_BUILD: ${{ matrix.build }}-pulley
         run: |
           # 1. Normal
           echo ">>> Building Pulley Normal..."
-          ./ci/build-release-artifacts.sh pulley "$PULLEY_BUILD" "${{ matrix.target }}"
-          ./ci/build-tarballs.sh "$PULLEY_BUILD" "${{ matrix.target }}"
+          ./ci/build-release-artifacts-kt.sh pulley "$PULLEY_BUILD" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "$PULLEY_BUILD" "${{ matrix.target }}"
           
           mkdir -p bins-$PULLEY_BUILD
           mv dist/* bins-$PULLEY_BUILD/
@@ -125,8 +133,8 @@ jobs:
           
           # 2. Min
           echo ">>> Building Pulley Min..."
-          ./ci/build-release-artifacts.sh pulley-min "$PULLEY_BUILD" "${{ matrix.target }}"
-          ./ci/build-tarballs.sh "$PULLEY_BUILD-min" "${{ matrix.target }}"
+          ./ci/build-release-artifacts-kt.sh pulley-min "$PULLEY_BUILD" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "$PULLEY_BUILD-min" "${{ matrix.target }}"
           
           mkdir -p bins-$PULLEY_BUILD-min
           mv dist/* bins-$PULLEY_BUILD-min/
@@ -167,7 +175,7 @@ jobs:
         run: |
           # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
           # 这里 Cranelift 和 Pulley 的包名不同 (xxx vs xxx-pulley)，所以互不干扰
-          ./ci/merge-artifacts.sh
+          ./ci/merge-artifacts-kt.sh
           ls -l dist/
 
       - name: Create Release
