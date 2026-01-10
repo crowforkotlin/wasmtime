@@ -1,5 +1,4 @@
 name: Simple Release
-
 on:
   push:
     branches:
@@ -37,7 +36,6 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
 
-    # 强制所有步骤使用 bash，因为你的构建脚本是 shell 脚本
     defaults:
       run:
         shell: bash
@@ -47,18 +45,20 @@ jobs:
         with:
           submodules: true
 
-      # 安装 Rust Nightly
+      # 【新增步骤】赋予 CI 目录下脚本执行权限
+      # 这能解决 "Permission denied" 错误
+      - name: Grant Execution Permissions
+        run: chmod +x ci/*.sh
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
 
-      # Linux 需要手动安装 Ninja (Windows/Mac 默认通常已有或不需要)
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
-      # 验证环境 (调试用，确保 CMake 存在)
       - name: Check Tools
         run: |
           cmake --version
@@ -120,25 +120,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 下载所有产物
+      # 【新增步骤】Merge 脚本也需要执行权限
+      - name: Grant Execution Permissions
+        run: chmod +x ci/*.sh
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: .
 
-      # 扁平化目录结构，供 merge 脚本使用
       - name: Flatten Artifacts Structure
         run: |
           mv */bins-* . || true
           ls -R bins-*
 
-      # 合并
       - name: Merge Artifacts
         run: |
           ./ci/merge-artifacts.sh
           ls -l dist/
 
-      # 发布
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
