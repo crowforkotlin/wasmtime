@@ -11,7 +11,8 @@ use core::fmt::{self, write};
 
 /// Construct an [`Error`](crate::Error) via string formatting or another error.
 ///
-/// Like `anyhow::anyhow!` but for [`wasmtime::Error`][crate::Error].
+/// Like `anyhow::format_err!` or `anyhow::anyhow!` but for
+/// [`wasmtime::Error`][crate::Error].
 ///
 /// # String Formatting
 ///
@@ -20,16 +21,16 @@ use core::fmt::{self, write};
 ///
 /// ```
 /// # use wasmtime_internal_error as wasmtime;
-/// use wasmtime::{anyhow, Error};
+/// use wasmtime::{format_err, Error};
 ///
 /// let x = 42;
-/// let error: Error = anyhow!("x is {x}");
+/// let error: Error = format_err!("x is {x}");
 /// assert_eq!(error.to_string(), "x is 42");
 ///
-/// let error: Error = anyhow!("x / 2 is {}", x / 2);
+/// let error: Error = format_err!("x / 2 is {}", x / 2);
 /// assert_eq!(error.to_string(), "x / 2 is 21");
 ///
-/// let error: Error = anyhow!("x + 1 is {y}", y = x + 1);
+/// let error: Error = format_err!("x + 1 is {y}", y = x + 1);
 /// assert_eq!(error.to_string(), "x + 1 is 43");
 /// ```
 ///
@@ -45,7 +46,7 @@ use core::fmt::{self, write};
 /// #![cfg(feature = "std")]
 /// # use wasmtime_internal_error as wasmtime;
 /// use std::fmt;
-/// use wasmtime::{anyhow, Error};
+/// use wasmtime::{format_err, Error};
 ///
 /// #[derive(Debug)]
 /// struct SomeOtherError(u32);
@@ -58,13 +59,32 @@ use core::fmt::{self, write};
 ///
 /// impl std::error::Error for SomeOtherError {}
 ///
-/// let error: Error = anyhow!(SomeOtherError(36));
+/// let error: Error = format_err!(SomeOtherError(36));
 /// assert!(error.is::<SomeOtherError>());
 /// assert_eq!(error.to_string(), "some other error (code 36)");
 /// # }
 /// ```
+///
+/// # From an `anyhow::Error`
+///
+/// The `format_err!` macro can always convert an `anyhow::Error` into a
+/// `wasmtime::Error`, but when the `"anyhow"` cargo feature is enabled the
+/// resulting error will also return true for
+/// [`error.is::<anyhow::Error>()`][crate::Error::is] invocations.
+///
+/// ```
+/// # fn _foo() {
+/// #![cfg(feature = "anyhow")]
+/// # use wasmtime_internal_error as wasmtime;
+/// use wasmtime::format_err;
+///
+/// let anyhow_error: anyhow::Error = anyhow::anyhow!("aw crap");
+/// let wasmtime_error: wasmtime::Error = format_err!(anyhow_error);
+/// assert!(wasmtime_error.is::<anyhow::Error>());
+/// # }
+/// ```
 #[macro_export]
-macro_rules! anyhow {
+macro_rules! format_err {
     // Format-style invocation without explicit format arguments.
     ( $message:literal $(,)? ) => {
         $crate::Error::from_format_args($crate::macros::format_args!($message))
@@ -80,26 +100,28 @@ macro_rules! anyhow {
     ( $error:expr $(,)? ) => {{
         use $crate::macros::ctor_specialization::*;
         let error = $error;
-        (&&error).wasmtime_error_choose_ctor().construct(error)
+        (&&&error).wasmtime_error_choose_ctor().construct(error)
     }};
 }
 
-/// Identical to the [`anyhow!`][crate::anyhow] macro.
+/// Identical to the [`format_err!`][crate::format_err] macro.
 ///
-/// Provided for compatibility.
+/// This is provided for API compatibility with the `anyhow` crate, but you
+/// should prefer using `format_err!` instead.
 #[macro_export]
-macro_rules! format_err {
+#[deprecated = "Use `format_err!(...)` instead"]
+macro_rules! anyhow {
     ( $( $args:tt )* ) => {
-        anyhow!( $( $args )* )
+        $crate::format_err!( $( $args )* )
     };
 }
 
 /// Early exit from the current function with an error.
 ///
-/// This helper is equivalent to `return Err(anyhow!(...))`.
+/// This helper is equivalent to `return Err(format_err!(...))`.
 ///
-/// See the docs for the [`anyhow!`][crate::anyhow] macro for details on the
-/// kinds of errors that can be constructed.
+/// See the docs for the [`format_err!`][crate::format_err] macro for details on
+/// the kinds of errors that can be constructed.
 ///
 /// Like `anyhow::bail!` but for [`wasmtime::Error`][crate::Error].
 ///
@@ -128,7 +150,7 @@ macro_rules! format_err {
 #[macro_export]
 macro_rules! bail {
     ( $($args:tt)* ) => {{
-        return $crate::macros::Err($crate::anyhow!( $( $args )* ));
+        return $crate::macros::Err($crate::format_err!( $( $args )* ));
     }};
 }
 
@@ -139,7 +161,7 @@ macro_rules! bail {
 ///
 /// ```ignore
 /// if !condition {
-///     return Err(anyhow!(...));
+///     return Err(format_err!(...));
 /// }
 /// ```
 ///
@@ -201,14 +223,16 @@ macro_rules! ensure {
 ///   well-typed at the trait method call site `(&&&&&t).method()`, then
 ///   `Specialization1` will be prioritized over `Specialization3`.
 ///
-/// In our specific case here of choosing an `Error` constructor, we only have
-/// two specializations:
+/// In our specific case here of choosing an `Error` constructor, we have
+/// three specializations:
 ///
-/// 1. When the type implements `core::error::Error`, we want to use the
+/// 1. For `anyhow::Error`, we want to use the `Error::from_anyhow` constructor.
+///
+/// 2. When the type implements `core::error::Error`, we want to use the
 ///    `Error::new` constructor, which will preserve
 ///    `core::error::Error::source` chains.
 ///
-/// 2. Otherwise, we want to use the `Error::msg` constructor.
+/// 3. Otherwise, we want to use the `Error::msg` constructor.
 ///
 /// The `*CtorTrait`s are our `n` specialization traits. Their
 /// `wasmtime_error_choose_ctor` methods will return different types, each of
@@ -219,6 +243,31 @@ macro_rules! ensure {
 pub mod ctor_specialization {
     use super::*;
 
+    #[cfg(feature = "anyhow")]
+    pub use anyhow::*;
+    #[cfg(feature = "anyhow")]
+    mod anyhow {
+        use super::*;
+
+        pub trait AnyhowCtorTrait {
+            #[inline]
+            fn wasmtime_error_choose_ctor(&self) -> AnyhowCtor {
+                AnyhowCtor
+            }
+        }
+
+        impl AnyhowCtorTrait for &anyhow::Error {}
+
+        pub struct AnyhowCtor;
+
+        impl AnyhowCtor {
+            #[inline]
+            pub fn construct(&self, anyhow_error: ::anyhow::Error) -> Error {
+                Error::from_anyhow(anyhow_error)
+            }
+        }
+    }
+
     pub trait NewCtorTrait {
         #[inline]
         fn wasmtime_error_choose_ctor(&self) -> NewCtor {
@@ -226,7 +275,7 @@ pub mod ctor_specialization {
         }
     }
 
-    impl<E: core::error::Error + Send + Sync + 'static> NewCtorTrait for &E {}
+    impl<E: core::error::Error + Send + Sync + 'static> NewCtorTrait for &&E {}
 
     pub struct NewCtor;
 
@@ -247,7 +296,7 @@ pub mod ctor_specialization {
         }
     }
 
-    impl<M: fmt::Debug + fmt::Display + Send + Sync + 'static> MsgCtorTrait for &&M {}
+    impl<M: fmt::Debug + fmt::Display + Send + Sync + 'static> MsgCtorTrait for &&&M {}
 
     pub struct MsgCtor;
 
@@ -291,7 +340,7 @@ pub mod formatting {
     impl Error {
         /// Construct an `Error` from format arguments.
         ///
-        /// Only for use by the `anyhow!` macro.
+        /// Only for use by the `format_err!` macro.
         #[doc(hidden)]
         pub fn from_format_args(args: fmt::Arguments<'_>) -> Self {
             if let Some(s) = args.as_str() {

@@ -260,14 +260,14 @@ impl BoxedDynError {
 /// ```
 ///
 /// If you do not want to early-return, just to create the `Error`, then the
-/// [`anyhow!`][crate::anyhow] macro is preferred:
+/// [`format_err!`][crate::format_err] macro is preferred:
 ///
 /// ```
 /// # use wasmtime_internal_error as wasmtime;
-/// use wasmtime::{anyhow, Error};
+/// use wasmtime::{format_err, Error};
 ///
 /// let x = 42;
-/// let my_error: Error = anyhow!("whoops! {x}");
+/// let my_error: Error = format_err!("whoops! {x}");
 /// ```
 ///
 /// If, however, you happen to require a constructor function instead of a
@@ -446,8 +446,14 @@ impl fmt::Debug for Error {
 
         if let Some(source) = inner.source() {
             f.write_str("\n\nCaused by:\n")?;
+            let multiple_causes = source.source().is_some();
             for (i, e) in Chain::new(source).enumerate() {
-                writeln!(f, "\t{i}: {e}")?;
+                if multiple_causes {
+                    write!(f, "{i: >5}: ")?;
+                } else {
+                    write!(f, "    ")?;
+                }
+                writeln!(f, "{e}")?;
             }
         }
 
@@ -511,7 +517,7 @@ impl From<Error> for Box<dyn core::error::Error + 'static> {
     }
 }
 
-/// Convert a [`Error`] into an [`anyhow::Error`].
+/// Convert a [`wasmtime::Error`][crate::Error] into an [`anyhow::Error`].
 ///
 /// # Example
 ///
@@ -642,8 +648,11 @@ impl Error {
     /// # use wasmtime_internal_error as wasmtime;
     /// use std::error::Error;
     ///
-    /// let anyhow_error = anyhow::Error::msg("whoops");
-    /// let boxed_error: Box<dyn Error + Send + Sync + 'static> = anyhow_error.into_boxed_dyn_error();
+    /// // You happen to have a boxed error trait object.
+    /// let orig_error = std::fs::read("XXX: some file that doesn't exist").unwrap_err();
+    /// let boxed_error: Box<dyn Error + Send + Sync + 'static> = Box::new(orig_error) as _;
+    ///
+    /// // You can turn it into a `wasmtime::Error` via `from_boxed`.
     /// let wasmtime_error = wasmtime::Error::from_boxed(boxed_error);
     /// # }
     /// ```
@@ -714,8 +723,8 @@ impl Error {
     /// cannot frob the blobbins
     ///
     /// Caused by:
-    /// 	0: failed to bonkinate
-    /// 	1: root cause
+    ///     0: failed to bonkinate
+    ///     1: root cause
     ///         "#.trim(),
     ///     ),
     /// );

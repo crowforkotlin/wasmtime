@@ -95,7 +95,7 @@ pub trait CustomCodeMemory: Send + Sync {
     ///
     /// `ptr` and `ptr.offset(len)` are guaranteed to be aligned as
     /// per `required_alignment()`.
-    fn publish_executable(&self, ptr: *const u8, len: usize) -> anyhow::Result<()>;
+    fn publish_executable(&self, ptr: *const u8, len: usize) -> crate::Result<()>;
 
     /// Unpublish a region of memory.
     ///
@@ -106,7 +106,7 @@ pub trait CustomCodeMemory: Send + Sync {
     ///
     /// `ptr` and `ptr.offset(len)` are guaranteed to be aligned as
     /// per `required_alignment()`.
-    fn unpublish_executable(&self, ptr: *const u8, len: usize) -> anyhow::Result<()>;
+    fn unpublish_executable(&self, ptr: *const u8, len: usize) -> crate::Result<()>;
 }
 
 impl CodeMemory {
@@ -214,7 +214,7 @@ impl CodeMemory {
             published: false,
             registered: false,
             enable_branch_protection: enable_branch_protection
-                .ok_or_else(|| anyhow!("missing `{}` section", obj::ELF_WASM_BTI))?,
+                .ok_or_else(|| format_err!("missing `{}` section", obj::ELF_WASM_BTI))?,
             needs_executable,
             #[cfg(feature = "debug-builtins")]
             has_native_debug_info,

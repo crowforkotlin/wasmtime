@@ -4,7 +4,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use wasmtime_environ::error::{Context, Result};
+use wasmtime_environ::prelude::*;
 
 /// Limits for running wast tests.
 ///
@@ -698,23 +698,6 @@ impl WastTest {
                     }
                 }
             }
-        }
-
-        let failing_component_model_tests = [
-            // TODO: Remove this once
-            // https://github.com/WebAssembly/component-model/issues/345 has
-            // been addressed and the test updated accordingly:
-            "component-model/test/wasm-tools/naming.wast",
-            // TODO: Remove this once
-            // https://github.com/bytecodealliance/wasm-tools/pull/2406 is
-            // merged and released, and Wasmtime has been updated to use it:
-            "component-model/test/async/same-component-stream-future.wast",
-        ];
-        if failing_component_model_tests
-            .iter()
-            .any(|part| self.path.ends_with(part))
-        {
-            return true;
         }
 
         // Not implemented in Wasmtime anywhere yet.

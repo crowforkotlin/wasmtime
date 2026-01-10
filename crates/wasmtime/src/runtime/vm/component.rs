@@ -6,6 +6,7 @@
 //! Eventually it's intended that module-to-module calls, which would be
 //! cranelift-compiled adapters, will use this `VMComponentContext` as well.
 
+use crate::Result;
 use crate::component::{Component, Instance, InstancePre, ResourceType, RuntimeImport};
 use crate::module::ModuleRegistry;
 use crate::runtime::component::ComponentInstanceId;
@@ -22,7 +23,6 @@ use crate::store::InstanceId;
 use crate::{Func, vm};
 use alloc::alloc::Layout;
 use alloc::sync::Arc;
-use anyhow::Result;
 use core::mem;
 use core::mem::offset_of;
 use core::pin::Pin;
@@ -871,8 +871,8 @@ impl ComponentInstance {
     pub fn instance_state(
         self: Pin<&mut Self>,
         instance: RuntimeComponentInstanceIndex,
-    ) -> Option<&mut InstanceState> {
-        self.instance_states().0.get_mut(instance)
+    ) -> &mut InstanceState {
+        &mut self.instance_states().0[instance]
     }
 
     /// Returns the destructor and instance flags for the specified resource
@@ -998,13 +998,27 @@ impl ComponentInstance {
     pub(crate) fn check_may_leave(
         &self,
         instance: RuntimeComponentInstanceIndex,
-    ) -> anyhow::Result<()> {
+    ) -> crate::Result<()> {
         let flags = self.instance_flags(instance);
         if unsafe { flags.may_leave() } {
             Ok(())
         } else {
-            Err(anyhow::anyhow!(crate::Trap::CannotLeaveComponent))
+            Err(crate::format_err!(crate::Trap::CannotLeaveComponent))
         }
+    }
+
+    pub(crate) fn task_may_block(&self) -> NonNull<VMGlobalDefinition> {
+        unsafe { self.vmctx_plus_offset_raw::<VMGlobalDefinition>(self.offsets.task_may_block()) }
+    }
+
+    #[cfg(feature = "component-model-async")]
+    pub(crate) fn get_task_may_block(&self) -> bool {
+        unsafe { *self.task_may_block().as_ref().as_i32() != 0 }
+    }
+
+    #[cfg(feature = "component-model-async")]
+    pub(crate) fn set_task_may_block(self: Pin<&mut Self>, val: bool) {
+        unsafe { *self.task_may_block().as_mut().as_i32_mut() = if val { 1 } else { 0 } }
     }
 }
 

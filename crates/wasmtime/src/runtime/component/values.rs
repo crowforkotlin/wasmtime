@@ -957,7 +957,7 @@ fn load_variant(
         }
     };
     let case_ty = types.nth(discriminant as usize).ok_or_else(|| {
-        anyhow!(
+        format_err!(
             "discriminant {} out of range [0..{})",
             discriminant,
             types.len()
@@ -989,7 +989,7 @@ fn lift_variant(
     let discriminant = next(src).get_u32();
     let ty = types
         .nth(discriminant as usize)
-        .ok_or_else(|| anyhow!("discriminant {discriminant} out of range [0..{len})"))?;
+        .ok_or_else(|| format_err!("discriminant {discriminant} out of range [0..{len})"))?;
     let (value, value_flat) = match ty {
         Some(ty) => (
             Some(Box::new(Val::lift(cx, ty, src)?)),
@@ -1015,7 +1015,7 @@ fn lower_list<T>(
     let size = items
         .len()
         .checked_mul(elt_size)
-        .ok_or_else(|| anyhow::anyhow!("size overflow copying a list"))?;
+        .ok_or_else(|| crate::format_err!("size overflow copying a list"))?;
     let ptr = cx.realloc(0, 0, elt_align, size)?;
     let mut element_ptr = ptr;
     for item in items {
@@ -1046,7 +1046,7 @@ fn flags_to_storage(ty: &TypeFlags, flags: &[String]) -> Result<Vec<u32>> {
         let bit = ty
             .names
             .get_index_of(flag)
-            .ok_or_else(|| anyhow::anyhow!("unknown flag: `{flag}`"))?;
+            .ok_or_else(|| crate::format_err!("unknown flag: `{flag}`"))?;
         storage[bit / 32] |= 1 << (bit % 32);
     }
     Ok(storage)
@@ -1055,7 +1055,7 @@ fn flags_to_storage(ty: &TypeFlags, flags: &[String]) -> Result<Vec<u32>> {
 fn get_enum_discriminant(ty: &TypeEnum, n: &str) -> Result<u32> {
     ty.names
         .get_index_of(n)
-        .ok_or_else(|| anyhow::anyhow!("enum variant name `{n}` is not valid"))
+        .ok_or_else(|| crate::format_err!("enum variant name `{n}` is not valid"))
         .map(|i| i.try_into().unwrap())
 }
 
@@ -1066,7 +1066,7 @@ fn get_variant_discriminant<'a>(
     let (i, _, ty) = ty
         .cases
         .get_full(name)
-        .ok_or_else(|| anyhow::anyhow!("unknown variant case: `{name}`"))?;
+        .ok_or_else(|| crate::format_err!("unknown variant case: `{name}`"))?;
     Ok((i.try_into().unwrap(), ty))
 }
 
