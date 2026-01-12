@@ -36,7 +36,6 @@ export CARGO_PROFILE_RELEASE_PANIC=abort
 flags=""
 cmake_flags=""
 build_std=""
-build_std_features=""
 
 # --- Configuration Logic ---
 
@@ -51,7 +50,6 @@ if [[ "$build" == *-min ]]; then
 
   # Build standard library from source for size reduction
   build_std="-Zbuild-std=std,panic_abort"
-  build_std_features="-Zbuild-std-features=std_detect_dlsym_getauxval"
 
   # Base CMake flags: Disable all features first
   # Note: This automatically adds `--no-default-features` to the C-API cargo build
@@ -60,7 +58,7 @@ if [[ "$build" == *-min ]]; then
 
   # Pass build-std flags to C-API via USER_CARGO_BUILD_OPTIONS
   # We use semicolons for the CMake list.
-  cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std;$build_std_features"
+  cmake_flags="$cmake_flags -DWASMTIME_USER_CARGO_BUILD_OPTIONS:LIST=$build_std"
 
   # Base features for CLI
   cli_base_features="--no-default-features --features disable-logging"
@@ -104,7 +102,7 @@ if [[ "$build" == *-min ]]; then
   fi
 
   # Add build-std to CLI flags
-  flags="$build_std $build_std_features $flags"
+  flags="$build_std $flags"
 
 else
   # === Full Build Configuration ===
