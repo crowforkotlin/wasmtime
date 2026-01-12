@@ -1,5 +1,8 @@
 name: Simple Release
-
+#on:
+#  push:
+#    branches:
+#      - 'main-kt'
 on:
   push:
     tags:
@@ -34,7 +37,7 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
           - build: aarch64-macos
-            os: macos-latest
+            os: macos-latest # 或者明确指定 macos-14
             target: aarch64-apple-darwin
 
           # Android (AArch64)
@@ -97,46 +100,33 @@ jobs:
           echo "RUSTFLAGS=-C link-arg=-z -C link-arg=max-page-size=16384" >> $GITHUB_ENV
 
       # ==========================================
-      # 1. 构建 Normal 版 (包含 wasmtime 全量)
+      # 流程 1: Cranelift (JIT) 构建
       # ==========================================
-      - name: Build Normal
+      - name: Build Cranelift (Normal & Min)
+        if: "!contains(matrix.target, 'ios')"
         env:
           RUSTC_BOOTSTRAP: 1
+          GITHUB_REF: refs/heads/release-simulate
         run: |
-          # 统一使用 cranelift (包含 pulley)
+          # 1. Normal
+          echo ">>> Building Cranelift Normal..."
           ./ci/build-release-artifacts-kt.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Package Normal
-        run: |
           ./ci/build-tarballs-kt.sh "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Stash Normal Artifacts
-        run: |
+          
           mkdir -p bins-${{ matrix.build }}
           mv dist/* bins-${{ matrix.build }}/
           rm -rf dist
-
-      # ==========================================
-      # 2. 构建 Min 版 (包含 wasmtime-min)
-      # ==========================================
-      - name: Build Min
-        env:
-          RUSTC_BOOTSTRAP: 1
-        run: |
+          
+          # 2. Min
+          echo ">>> Building Cranelift Min..."
           ./ci/build-release-artifacts-kt.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
-
-      - name: Package Min
-        run: |
           ./ci/build-tarballs-kt.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
-
-      - name: Stash Min Artifacts
-        run: |
+          
           mkdir -p bins-${{ matrix.build }}-min
           mv dist/* bins-${{ matrix.build }}-min/
           rm -rf dist
-
       # ==========================================
-      # 上传产物
+      # 上传所有产物
       # ==========================================
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -162,11 +152,14 @@ jobs:
 
       - name: Flatten Artifacts Structure
         run: |
+          # 把下载下来的文件夹展平
           mv */bins-* . || true
           ls -R bins-*
 
       - name: Merge Artifacts
         run: |
+          # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
+          # 这里 Cranelift
           ./ci/merge-artifacts-kt.sh
           ls -l dist/
 
