@@ -18,26 +18,39 @@ for min in bins-*-min/*.tar.*; do
 
   normal=${min/-min\//\/}
 
-  # 必须确保 normal 包存在，否则说明该架构的全量构建失败了
   if [ ! -f "$normal" ]; then
     echo "Warning: Normal artifact not found for $min. Skipping merge."
     continue
   fi
 
   filename=$(basename $normal)
+  # 处理 .tar.gz 和 .tar.xz
   dir=${filename%.tar.gz}
   dir=${dir%.tar.xz}
 
   rm -rf tmp
-  mkdir tmp
+  mkdir -p tmp/normal
+  mkdir -p tmp/min
 
-  # 解压 Min (得到 wasmtime-min)
-  tar xf $min -C tmp
-  # 解压 Normal (得到 wasmtime) -> 两个文件现在都在 tmp/$dir 下了
-  tar xf $normal -C tmp
+  # 1. 分别解压，防止覆盖或路径冲突
+  echo "Extracting Normal: $normal"
+  tar xf $normal -C tmp/normal
 
-  # 重新压缩为 .tar.xz
-  tar -cf - -C tmp $dir | xz -T0 > dist/$dir.tar.xz
+  echo "Extracting Min: $min"
+  tar xf $min -C tmp/min
+
+  # 2. 合并：将 Min 的内容复制到 Normal 目录中
+  # cp -r 会合并目录结构
+  echo "Merging contents..."
+  cp -r tmp/min/* tmp/normal/
+
+  # 3. 重新打包
+  # 注意：tmp/normal 下面现在应该包含唯一的文件夹 'wasmtime-v42-xxx'
+  # 我们需要打包这个文件夹
+  pkg_dir=$(ls tmp/normal | head -n 1)
+
+  echo "Repackaging $pkg_dir to .tar.xz"
+  tar -cf - -C tmp/normal $pkg_dir | xz -T0 > dist/$dir.tar.xz
 
   rm $min $normal
 done
@@ -57,22 +70,32 @@ for min in bins-*-min/*.zip; do
   dir=${filename%.zip}
 
   rm -rf tmp
-  mkdir tmp
+  mkdir -p tmp/normal
+  mkdir -p tmp/min
 
-  (cd tmp && unzip -o ../$min)
-  (cd tmp && unzip -o ../$normal)
+  # 1. 分别解压
+  (cd tmp/normal && unzip -o ../../$normal)
+  (cd tmp/min && unzip -o ../../$min)
 
+  # 2. 合并
+  cp -r tmp/min/* tmp/normal/
+
+  pkg_dir=$(ls tmp/normal | head -n 1)
+
+  # 3. 打包
   if command -v 7z >/dev/null 2>&1; then
-     (cd tmp && 7z a ../dist/$dir.zip $dir/)
+     (cd tmp/normal && 7z a ../../dist/$dir.zip $pkg_dir/)
   elif command -v zip >/dev/null 2>&1; then
-     (cd tmp && zip -r ../dist/$dir.zip $dir/)
+     (cd tmp/normal && zip -r ../../dist/$dir.zip $pkg_dir/)
   else
-     tar -czvf dist/"$dir".tar.gz -C tmp "$dir"
+     # 回退方案
+     tar -czvf dist/"$dir".tar.gz -C tmp/normal "$pkg_dir"
   fi
 
   rm $min $normal
 done
 
 echo ">>> Moving remaining artifacts..."
+# 移动那些没有配对成功的剩余文件
 mv bins-*/*.tar.* dist/ 2>/dev/null || true
 mv bins-*/*.zip dist/ 2>/dev/null || true
