@@ -130,9 +130,9 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bins-${{ matrix.build }}
-          path: bins-*/**
-          retention-days: 1
+            name: artifacts-bins-${{ matrix.build }}
+            path: bins-*/**
+            retention-days: 1
 
   release:
     name: Merge and Publish
@@ -151,10 +151,11 @@ jobs:
 
       - name: Flatten Artifacts Structure
         run: |
-          # 把下载下来的文件夹展平
-          mv */bins-* . || true
-          ls -R bins-*
-
+          echo "Before flatten:"
+          ls -R
+          mv artifacts-bins-*/bins-* . || true
+          echo "After flatten:"
+          ls -d bins-*
       - name: Merge Artifacts
         run: |
           # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
