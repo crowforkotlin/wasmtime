@@ -1,8 +1,5 @@
 name: Simple Release
-#on:
-#  push:
-#    branches:
-#      - 'main-kt'
+
 on:
   push:
     tags:
@@ -37,7 +34,7 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
           - build: aarch64-macos
-            os: macos-latest # 或者明确指定 macos-14
+            os: macos-latest
             target: aarch64-apple-darwin
 
           # Android (AArch64)
@@ -100,62 +97,46 @@ jobs:
           echo "RUSTFLAGS=-C link-arg=-z -C link-arg=max-page-size=16384" >> $GITHUB_ENV
 
       # ==========================================
-      # 流程 1: Cranelift (JIT) 构建
+      # 1. 构建 Normal 版 (包含 wasmtime 全量)
       # ==========================================
-      - name: Build Cranelift (Normal & Min)
-        if: "!contains(matrix.target, 'ios')"
+      - name: Build Normal
         env:
           RUSTC_BOOTSTRAP: 1
-          GITHUB_REF: refs/heads/release-simulate
         run: |
-          # 1. Normal
-          echo ">>> Building Cranelift Normal..."
-          ./ci/build-release-artifacts-kt.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
-          ./ci/build-tarballs-kt.sh "${{ matrix.build }}" "${{ matrix.target }}"
-          
+          # 统一使用 cranelift (包含 pulley)
+          ./ci/build-release-artifacts.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Package Normal
+        run: |
+          ./ci/build-tarballs.sh "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Stash Normal Artifacts
+        run: |
           mkdir -p bins-${{ matrix.build }}
           mv dist/* bins-${{ matrix.build }}/
           rm -rf dist
-          
-          # 2. Min
-          echo ">>> Building Cranelift Min..."
-          ./ci/build-release-artifacts-kt.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
-          ./ci/build-tarballs-kt.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
-          
+
+      # ==========================================
+      # 2. 构建 Min 版 (包含 wasmtime-min)
+      # ==========================================
+      - name: Build Min
+        env:
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          ./ci/build-release-artifacts.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Package Min
+        run: |
+          ./ci/build-tarballs.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
+
+      - name: Stash Min Artifacts
+        run: |
           mkdir -p bins-${{ matrix.build }}-min
           mv dist/* bins-${{ matrix.build }}-min/
           rm -rf dist
 
       # ==========================================
-      # 流程 2: Pulley (Interpreter) 构建
-      # ==========================================
-      - name: Build Pulley (Normal & Min)
-        env:
-          RUSTC_BOOTSTRAP: 1
-          GITHUB_REF: refs/heads/release-simulate
-          # 定义一个带后缀的 build name，这样 build-tarballs-kt.sh 生成的包名就会带上 -pulley
-          PULLEY_BUILD: ${{ matrix.build }}-pulley
-        run: |
-          # 1. Normal
-          echo ">>> Building Pulley Normal..."
-          ./ci/build-release-artifacts-kt.sh pulley "$PULLEY_BUILD" "${{ matrix.target }}"
-          ./ci/build-tarballs-kt.sh "$PULLEY_BUILD" "${{ matrix.target }}"
-          
-          mkdir -p bins-$PULLEY_BUILD
-          mv dist/* bins-$PULLEY_BUILD/
-          rm -rf dist
-          
-          # 2. Min
-          echo ">>> Building Pulley Min..."
-          ./ci/build-release-artifacts-kt.sh pulley-min "$PULLEY_BUILD" "${{ matrix.target }}"
-          ./ci/build-tarballs-kt.sh "$PULLEY_BUILD-min" "${{ matrix.target }}"
-          
-          mkdir -p bins-$PULLEY_BUILD-min
-          mv dist/* bins-$PULLEY_BUILD-min/
-          rm -rf dist
-
-      # ==========================================
-      # 上传所有产物
+      # 上传产物
       # ==========================================
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -181,15 +162,12 @@ jobs:
 
       - name: Flatten Artifacts Structure
         run: |
-          # 把下载下来的文件夹展平
           mv */bins-* . || true
           ls -R bins-*
 
       - name: Merge Artifacts
         run: |
-          # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
-          # 这里 Cranelift 和 Pulley 的包名不同 (xxx vs xxx-pulley)，所以互不干扰
-          ./ci/merge-artifacts-kt.sh
+          ./ci/merge-artifacts.sh
           ls -l dist/
 
       - name: Create Release
