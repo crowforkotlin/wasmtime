@@ -100,10 +100,9 @@ jobs:
           echo "RUSTFLAGS=-C link-arg=-z -C link-arg=max-page-size=16384" >> $GITHUB_ENV
 
       # ==========================================
-      # 流程 1: Cranelift (JIT) 构建
+      # 流程 1: Cranelift & Pulley
       # ==========================================
       - name: Build Cranelift (Normal & Min)
-        if: "!contains(matrix.target, 'ios')"
         env:
           RUSTC_BOOTSTRAP: 1
           GITHUB_REF: refs/heads/release-simulate
