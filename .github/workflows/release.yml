@@ -1,0 +1,172 @@
+name: Simple Release
+#on:
+#  push:
+#    branches:
+#      - 'main-kt'
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.build }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - build: x86_64-windows
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+
+          # Linux
+          - build: x86_64-linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: aarch64-linux
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          # macOS
+          - build: x86_64-macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - build: aarch64-macos
+            os: macos-latest # 或者明确指定 macos-14
+            target: aarch64-apple-darwin
+
+          # Android (AArch64)
+          - build: aarch64-android
+            os: ubuntu-latest
+            target: aarch64-linux-android
+
+          # iOS
+          - build: aarch64-ios
+            os: macos-latest
+            target: aarch64-apple-ios
+          - build: aarch64-ios-sim
+            os: macos-latest
+            target: aarch64-apple-ios-sim
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Grant Execution Permissions
+        run: chmod +x ci/*.sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+          components: rust-src
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      # === Linux AArch64 交叉编译工具链 ===
+      - name: Install AArch64 Toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+
+      # === Android 环境配置 ===
+      - name: Setup Android Environment
+        if: contains(matrix.target, 'android')
+        run: |
+          if [ -z "$ANDROID_NDK_HOME" ]; then echo "Error: NDK not found"; exit 1; fi
+          # Ubuntu Runner 的 NDK 是 linux-x86_64
+          TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          API=24
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android${API}-clang" >> $GITHUB_ENV
+          echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android${API}-clang++" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android${API}-clang" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C link-arg=-z -C link-arg=max-page-size=16384" >> $GITHUB_ENV
+
+      # ==========================================
+      # 流程 1: Cranelift & Pulley
+      # ==========================================
+      - name: Build Cranelift (Normal & Min)
+        env:
+          RUSTC_BOOTSTRAP: 1
+          GITHUB_REF: refs/heads/release-simulate
+        run: |
+          # 1. Normal
+          echo ">>> Building Cranelift Normal..."
+          ./ci/build-release-artifacts-kt.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "${{ matrix.build }}" "${{ matrix.target }}"
+          
+          mkdir -p bins-${{ matrix.build }}
+          mv dist/* bins-${{ matrix.build }}/
+          rm -rf dist
+          
+          # 2. Min
+          echo ">>> Building Cranelift Min..."
+          ./ci/build-release-artifacts-kt.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
+          ./ci/build-tarballs-kt.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
+          
+          mkdir -p bins-${{ matrix.build }}-min
+          mv dist/* bins-${{ matrix.build }}-min/
+          rm -rf dist
+      # ==========================================
+      # 上传所有产物
+      # ==========================================
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+            name: artifacts-bins-${{ matrix.build }}
+            path: bins-*/**
+            retention-days: 1
+
+  release:
+    name: Merge and Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Grant Execution Permissions
+        run: chmod +x ci/*.sh
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      - name: Flatten Artifacts Structure
+        run: |
+          echo "Before flatten:"
+          ls -R
+          mv artifacts-bins-*/bins-* . || true
+          echo "After flatten:"
+          ls -d bins-*
+      - name: Merge Artifacts
+        run: |
+          # 脚本会自动把 bins-xxx-min 合并进 bins-xxx
+          # 这里 Cranelift
+          ./ci/merge-artifacts-kt.sh
+          ls -l dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
+          draft: true
+          prerelease: false
