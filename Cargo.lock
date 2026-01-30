@@ -13,11 +13,11 @@ dependencies = [
 
 [[package]]
 name = "addr2line"
-version = "0.25.1"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
+checksum = "9698bf0769c641b18618039fe2ebd41eb3541f98433000f64e663fab7cea2c87"
 dependencies = [
- "gimli 0.32.3",
+ "gimli 0.33.0",
 ]
 
 [[package]]
@@ -743,6 +743,7 @@ dependencies = [
  "arbitrary",
  "serde",
  "serde_derive",
+ "wasmtime-internal-core",
 ]
 
 [[package]]
@@ -762,7 +763,7 @@ dependencies = [
  "cranelift-isle",
  "criterion",
  "env_logger 0.11.5",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "hashbrown 0.15.2",
  "libm",
  "log",
@@ -778,7 +779,7 @@ dependencies = [
  "smallvec 1.15.1",
  "souper-ir",
  "target-lexicon",
- "wasmtime-internal-math",
+ "wasmtime-internal-core",
 ]
 
 [[package]]
@@ -810,6 +811,7 @@ dependencies = [
  "cranelift-bitset",
  "serde",
  "serde_derive",
+ "wasmtime-internal-core",
 ]
 
 [[package]]
@@ -828,7 +830,7 @@ dependencies = [
  "cranelift-reader",
  "file-per-thread-logger",
  "filecheck",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "libm",
  "log",
  "num_cpus",
@@ -1628,11 +1630,12 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.32.3"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+checksum = "0bf7f043f89559805f8c7cacc432749b2fa0d0a0a9ee46ce47164ed5ba7f126c"
 dependencies = [
- "fallible-iterator",
+ "fnv",
+ "hashbrown 0.16.1",
  "indexmap 2.11.4",
  "stable_deref_trait",
 ]
@@ -1702,6 +1705,12 @@ dependencies = [
  "foldhash",
  "serde",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 
 [[package]]
 name = "heck"
@@ -2013,7 +2022,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.2",
+ "hashbrown 0.16.1",
  "serde",
  "serde_core",
 ]
@@ -2645,6 +2654,7 @@ checksum = "1fa7e49bd669d32d7bc2a15ec540a527e7764aec722a45467814005725bcd721"
 dependencies = [
  "ort-sys",
  "smallvec 2.0.0-alpha.10",
+ "tracing",
 ]
 
 [[package]]
@@ -2807,7 +2817,7 @@ dependencies = [
  "log",
  "pulley-macros",
  "termcolor",
- "wasmtime-internal-math",
+ "wasmtime-internal-core",
 ]
 
 [[package]]
@@ -4495,7 +4505,7 @@ dependencies = [
 name = "wasmtime"
 version = "42.0.0"
 dependencies = [
- "addr2line 0.25.1",
+ "addr2line 0.26.0",
  "async-trait",
  "bitflags 2.9.4",
  "bumpalo",
@@ -4507,7 +4517,7 @@ dependencies = [
  "env_logger 0.11.5",
  "futures",
  "fxprof-processed-profile",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "hashbrown 0.15.2",
  "indexmap 2.11.4",
  "ittapi",
@@ -4540,12 +4550,11 @@ dependencies = [
  "wasmtime-internal-cache",
  "wasmtime-internal-component-macro",
  "wasmtime-internal-component-util",
+ "wasmtime-internal-core",
  "wasmtime-internal-cranelift",
  "wasmtime-internal-fiber",
  "wasmtime-internal-jit-debug",
  "wasmtime-internal-jit-icache-coherence",
- "wasmtime-internal-math",
- "wasmtime-internal-slab",
  "wasmtime-internal-unwinder",
  "wasmtime-internal-versioned-export-macros",
  "wasmtime-internal-winch",
@@ -4617,7 +4626,7 @@ dependencies = [
  "env_logger 0.11.5",
  "filecheck",
  "futures",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "http",
  "http-body-util",
  "hyper",
@@ -4698,7 +4707,7 @@ dependencies = [
  "cranelift-bitset",
  "cranelift-entity",
  "env_logger 0.11.5",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "indexmap 2.11.4",
  "log",
  "object 0.37.3",
@@ -4713,7 +4722,7 @@ dependencies = [
  "wasmparser 0.244.0",
  "wasmprinter",
  "wasmtime-internal-component-util",
- "wasmtime-internal-error",
+ "wasmtime-internal-core",
  "wat",
 ]
 
@@ -4769,6 +4778,7 @@ version = "0.0.0"
 dependencies = [
  "arbitrary",
  "backtrace",
+ "cranelift-bitset",
  "env_logger 0.11.5",
  "futures",
  "indexmap 2.11.4",
@@ -4793,7 +4803,8 @@ dependencies = [
  "wasmprinter",
  "wasmtime",
  "wasmtime-cli-flags",
- "wasmtime-internal-error",
+ "wasmtime-environ",
+ "wasmtime-internal-core",
  "wasmtime-test-util",
  "wasmtime-wasi",
  "wasmtime-wast",
@@ -4854,6 +4865,14 @@ name = "wasmtime-internal-component-util"
 version = "42.0.0"
 
 [[package]]
+name = "wasmtime-internal-core"
+version = "42.0.0"
+dependencies = [
+ "anyhow",
+ "libm",
+]
+
+[[package]]
 name = "wasmtime-internal-cranelift"
 version = "42.0.0"
 dependencies = [
@@ -4863,7 +4882,7 @@ dependencies = [
  "cranelift-entity",
  "cranelift-frontend",
  "cranelift-native",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "itertools 0.14.0",
  "log",
  "object 0.37.3",
@@ -4873,7 +4892,7 @@ dependencies = [
  "thiserror 2.0.17",
  "wasmparser 0.244.0",
  "wasmtime-environ",
- "wasmtime-internal-math",
+ "wasmtime-internal-core",
  "wasmtime-internal-unwinder",
  "wasmtime-internal-versioned-export-macros",
 ]
@@ -4886,13 +4905,6 @@ dependencies = [
  "log",
  "tokio",
  "wasmtime",
-]
-
-[[package]]
-name = "wasmtime-internal-error"
-version = "42.0.0"
-dependencies = [
- "anyhow",
 ]
 
 [[package]]
@@ -4939,20 +4951,9 @@ version = "42.0.0"
 dependencies = [
  "cfg-if",
  "libc",
- "wasmtime-environ",
+ "wasmtime-internal-core",
  "windows-sys 0.61.2",
 ]
-
-[[package]]
-name = "wasmtime-internal-math"
-version = "42.0.0"
-dependencies = [
- "libm",
-]
-
-[[package]]
-name = "wasmtime-internal-slab"
-version = "42.0.0"
 
 [[package]]
 name = "wasmtime-internal-unwinder"
@@ -4979,7 +4980,7 @@ name = "wasmtime-internal-winch"
 version = "42.0.0"
 dependencies = [
  "cranelift-codegen",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "log",
  "object 0.37.3",
  "target-lexicon",
@@ -5109,6 +5110,7 @@ dependencies = [
  "wasm-compose",
  "wasmtime",
  "wasmtime-wasi",
+ "wasmtime-wasi-http",
  "wasmtime-wasi-io",
  "webpki-roots",
 ]
@@ -5120,6 +5122,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "tracing",
  "wasmtime",
 ]
 
@@ -5390,15 +5393,15 @@ version = "42.0.0"
 dependencies = [
  "cranelift-assembler-x64",
  "cranelift-codegen",
- "gimli 0.32.3",
+ "gimli 0.33.0",
  "regalloc2",
  "smallvec 1.15.1",
  "target-lexicon",
  "thiserror 2.0.17",
  "wasmparser 0.244.0",
  "wasmtime-environ",
+ "wasmtime-internal-core",
  "wasmtime-internal-cranelift",
- "wasmtime-internal-math",
 ]
 
 [[package]]

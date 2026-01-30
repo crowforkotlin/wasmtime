@@ -57,11 +57,11 @@ impl<'a, T: 'static> LowerContext<'a, T> {
         options: OptionsIndex,
         instance: Instance,
     ) -> LowerContext<'a, T> {
-        #[cfg(all(debug_assertions, feature = "component-model-async"))]
-        if store.engine().config().async_support {
-            // Assert that we're running on a fiber, which is necessary in
-            // case we call the guest's realloc function.
-            store.0.with_blocking(|_, _| {});
+        // Debug-assert that if we can't block that blocking is indeed allowed.
+        // This'll catch when this is accidentally created outside of a fiber
+        // when we need to be on a fiber.
+        if cfg!(debug_assertions) && !store.0.can_block() {
+            store.0.validate_sync_call().unwrap();
         }
         let (component, store) = instance.component_and_store_mut(store.0);
         LowerContext {
@@ -331,7 +331,7 @@ pub struct LiftContext<'a> {
         not(feature = "component-model-async"),
         allow(unused, reason = "easier to not #[cfg] away")
     )]
-    concurrent_state: &'a mut ConcurrentState,
+    concurrent_state: Option<&'a mut ConcurrentState>,
 }
 
 #[doc(hidden)]
@@ -408,7 +408,7 @@ impl<'a> LiftContext<'a> {
 
     #[cfg(feature = "component-model-async")]
     pub(crate) fn concurrent_state_mut(&mut self) -> &mut ConcurrentState {
-        self.concurrent_state
+        self.concurrent_state.as_deref_mut().unwrap()
     }
 
     /// Lifts an `own` resource from the guest at the `idx` specified into its

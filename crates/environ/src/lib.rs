@@ -16,6 +16,7 @@
 extern crate std;
 extern crate alloc;
 
+pub mod collections;
 pub mod prelude;
 
 mod address_map;
@@ -80,12 +81,14 @@ pub mod fact;
 // one of three and making sure you're using the right one.
 pub use cranelift_entity::*;
 
-// Reexport the error crate as a submodule for convenience.
+// Reexport the error module for convenience.
 #[doc(inline)]
-pub use wasmtime_error as error;
+pub use wasmtime_core::error;
 
 #[cfg(feature = "anyhow")]
-pub use wasmtime_error::ToWasmtimeResult;
+pub use self::error::ToWasmtimeResult;
+
+pub use wasmtime_core::{alloc::PanicOnOom, undo::Undo};
 
 // Only for use with `bindgen!`-generated code.
 #[doc(hidden)]

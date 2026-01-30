@@ -38,7 +38,6 @@ pub fn config() -> Config {
     config.wasm_component_model_async_stackful(true);
     config.wasm_component_model_threading(true);
     config.wasm_component_model_error_context(true);
-    config.async_support(true);
     config
 }
 
@@ -204,7 +203,6 @@ pub async fn test_run_with_count(components: &[&str], count: usize) -> Result<()
             wasi: WasiCtxBuilder::new().inherit_stdio().build(),
             table: ResourceTable::default(),
             continue_: false,
-            wakers: Arc::new(std::sync::Mutex::new(None)),
         },
     );
 
