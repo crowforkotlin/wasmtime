@@ -82,167 +82,167 @@ version = "0.129.0"
 audited_as = "0.127.1"
 
 [[unpublished.pulley-interpreter]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.pulley-macros]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasi-common]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-cli]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-cli-flags]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-environ]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-c-api-macros]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-cache]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-component-macro]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-component-util]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-core]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "0.0.0"
 
 [[unpublished.wasmtime-internal-cranelift]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-debugger]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "41.0.0"
 
 [[unpublished.wasmtime-internal-error]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "0.0.0"
 
 [[unpublished.wasmtime-internal-explorer]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-fiber]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-jit-debug]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-jit-icache-coherence]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-math]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-slab]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-unwinder]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-versioned-export-macros]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-winch]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-wit-bindgen]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-internal-wmemcheck]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-config]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-http]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-io]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-keyvalue]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-nn]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-threads]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-tls]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-tls-nativetls]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wasi-tls-openssl]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "0.0.1"
 
 [[unpublished.wasmtime-wast]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wasmtime-wizer]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wiggle]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wiggle-generate]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wiggle-macro]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[unpublished.wiggle-test]]
@@ -250,7 +250,7 @@ version = "0.0.0"
 audited_as = "0.1.0"
 
 [[unpublished.winch-codegen]]
-version = "41.0.1"
+version = "42.0.0"
 audited_as = "40.0.1"
 
 [[publisher.aho-corasick]]
