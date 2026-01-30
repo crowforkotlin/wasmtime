@@ -9,8 +9,9 @@ set -ex
 build=$1
 target=$2
 
-rm -rf tmp dist
-mkdir -p tmp dist
+rm -rf tmp
+mkdir tmp
+mkdir -p dist
 
 # 1. 版本号
 tag=dev
