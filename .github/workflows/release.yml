@@ -112,19 +112,16 @@ jobs:
           ./ci/build-release-artifacts-kt.sh cranelift "${{ matrix.build }}" "${{ matrix.target }}"
           ./ci/build-tarballs-kt.sh "${{ matrix.build }}" "${{ matrix.target }}"
           
-          rm -rf bins-${{ matrix.build }}
           mkdir -p bins-${{ matrix.build }}
-          
           mv dist/* bins-${{ matrix.build }}/
+          rm -rf dist
           
           # 2. Min
           echo ">>> Building Cranelift Min..."
           ./ci/build-release-artifacts-kt.sh cranelift-min "${{ matrix.build }}" "${{ matrix.target }}"
           ./ci/build-tarballs-kt.sh "${{ matrix.build }}-min" "${{ matrix.target }}"
           
-          rm -rf bins-${{ matrix.build }}-min
           mkdir -p bins-${{ matrix.build }}-min
-          
           mv dist/* bins-${{ matrix.build }}-min/
           rm -rf dist
       # ==========================================
