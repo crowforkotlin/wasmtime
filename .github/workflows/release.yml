@@ -60,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
 
       - name: Grant Execution Permissions
         run: chmod +x ci/*.sh
