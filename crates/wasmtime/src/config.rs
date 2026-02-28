@@ -2,11 +2,12 @@ use crate::prelude::*;
 use alloc::sync::Arc;
 use bitflags::Flags;
 use core::fmt;
+use core::num::NonZeroUsize;
 use core::str::FromStr;
-#[cfg(any(feature = "cache", feature = "cranelift", feature = "winch"))]
+#[cfg(any(feature = "cranelift", feature = "winch"))]
 use std::path::Path;
 pub use wasmparser::WasmFeatures;
-use wasmtime_environ::{ConfigTunables, TripleExt, Tunables};
+use wasmtime_environ::{ConfigTunables, OperatorCost, OperatorCostStrategy, TripleExt, Tunables};
 
 #[cfg(feature = "runtime")]
 use crate::memory::MemoryCreator;
@@ -30,6 +31,8 @@ pub use crate::runtime::code_memory::CustomCodeMemory;
 pub use wasmtime_cache::{Cache, CacheConfig};
 #[cfg(all(feature = "incremental-cache", feature = "cranelift"))]
 pub use wasmtime_environ::CacheStore;
+
+pub(crate) const DEFAULT_WASM_BACKTRACE_MAX_FRAMES: NonZeroUsize = NonZeroUsize::new(20).unwrap();
 
 /// Represents the module instance allocation strategy to use.
 #[derive(Clone)]
@@ -99,6 +102,31 @@ impl core::hash::Hash for ModuleVersionStrategy {
     }
 }
 
+impl ModuleVersionStrategy {
+    /// Get the string-encoding version of the module.
+    pub fn as_str(&self) -> &str {
+        match &self {
+            Self::WasmtimeVersion => env!("CARGO_PKG_VERSION_MAJOR"),
+            Self::Custom(c) => c,
+            Self::None => "",
+        }
+    }
+}
+
+/// Configuration for record/replay
+#[derive(Clone)]
+#[non_exhaustive]
+pub enum RRConfig {
+    #[cfg(feature = "rr")]
+    /// Recording on store is enabled
+    Recording,
+    #[cfg(feature = "rr")]
+    /// Replaying on store is enabled
+    Replaying,
+    /// No record/replay is enabled
+    None,
+}
+
 /// Global configuration options used to create an [`Engine`](crate::Engine)
 /// and customize its behavior.
 ///
@@ -144,8 +172,8 @@ pub struct Config {
     pub(crate) enabled_features: WasmFeatures,
     /// Same as `enabled_features`, but for those that are explicitly disabled.
     pub(crate) disabled_features: WasmFeatures,
-    pub(crate) wasm_backtrace: bool,
     pub(crate) wasm_backtrace_details_env_used: bool,
+    pub(crate) wasm_backtrace_max_frames: Option<NonZeroUsize>,
     pub(crate) native_unwind_info: Option<bool>,
     #[cfg(any(feature = "async", feature = "stack-switching"))]
     pub(crate) async_stack_size: usize,
@@ -164,6 +192,7 @@ pub struct Config {
     pub(crate) detect_host_feature: Option<fn(&str) -> Option<bool>>,
     pub(crate) x86_float_abi_ok: Option<bool>,
     pub(crate) shared_memory: bool,
+    pub(crate) rr_config: RRConfig,
 }
 
 /// User-provided configuration for the compiler.
@@ -248,8 +277,8 @@ impl Config {
             // 1` forces this), or at least it passed when this change was
             // committed.
             max_wasm_stack: 512 * 1024,
-            wasm_backtrace: true,
             wasm_backtrace_details_env_used: false,
+            wasm_backtrace_max_frames: Some(DEFAULT_WASM_BACKTRACE_MAX_FRAMES),
             native_unwind_info: None,
             enabled_features: WasmFeatures::empty(),
             disabled_features: WasmFeatures::empty(),
@@ -273,6 +302,7 @@ impl Config {
             detect_host_feature: None,
             x86_float_abi_ok: None,
             shared_memory: false,
+            rr_config: RRConfig::None,
         };
         ret.wasm_backtrace_details(WasmBacktraceDetails::Environment);
         ret
@@ -424,9 +454,9 @@ impl Config {
     /// Breakpoints, watchpoints, and stepping are not yet supported,
     /// but will be added in a future version of Wasmtime.
     ///
-    /// This enables use of the [`crate::DebugFrameCursor`] API which is
-    /// provided by [`crate::Caller::debug_frames`] from within a
-    /// hostcall context.
+    /// This enables use of the [`crate::FrameHandle`] API which is
+    /// provided by [`crate::Caller::debug_exit_frames`] or
+    /// [`crate::Store::debug_exit_frames`].
     ///
     /// ***Note*** Enabling this option is not compatible with the
     /// Winch compiler.
@@ -439,30 +469,27 @@ impl Config {
     /// Configures whether [`WasmBacktrace`] will be present in the context of
     /// errors returned from Wasmtime.
     ///
-    /// A backtrace may be collected whenever an error is returned from a host
-    /// function call through to WebAssembly or when WebAssembly itself hits a
-    /// trap condition, such as an out-of-bounds memory access. This flag
-    /// indicates, in these conditions, whether the backtrace is collected or
-    /// not.
-    ///
-    /// Currently wasm backtraces are implemented through frame pointer walking.
-    /// This means that collecting a backtrace is expected to be a fast and
-    /// relatively cheap operation. Additionally backtrace collection is
-    /// suitable in concurrent environments since one thread capturing a
-    /// backtrace won't block other threads.
-    ///
-    /// Collected backtraces are attached via
-    /// [`Error::context`](crate::Error::context) to errors returned from host
-    /// functions. The [`WasmBacktrace`] type can be acquired via
-    /// [`Error::downcast_ref`](crate::Error::downcast_ref) to inspect the
-    /// backtrace. When this option is disabled then this context is never
-    /// applied to errors coming out of wasm.
-    ///
-    /// This option is `true` by default.
+    /// This method is deprecated in favor of
+    /// [`Config::wasm_backtrace_max_frames`]. Calling `wasm_backtrace(false)`
+    /// is equivalent to `wasm_backtrace_max_frames(None)`, and
+    /// `wasm_backtrace(true)` will leave `wasm_backtrace_max_frames` unchanged
+    /// if the value is `Some` and will otherwise restore the default `Some`
+    /// value.
     ///
     /// [`WasmBacktrace`]: crate::WasmBacktrace
+    #[deprecated = "use `wasm_backtrace_max_frames` instead"]
     pub fn wasm_backtrace(&mut self, enable: bool) -> &mut Self {
-        self.wasm_backtrace = enable;
+        match (enable, self.wasm_backtrace_max_frames) {
+            (false, _) => self.wasm_backtrace_max_frames = None,
+            // Wasm backtraces were disabled; enable them with the
+            // default maximum number of frames to capture.
+            (true, None) => {
+                self.wasm_backtrace_max_frames = Some(DEFAULT_WASM_BACKTRACE_MAX_FRAMES)
+            }
+            // Wasm backtraces are already enabled; keep the existing
+            // max-frames configuration.
+            (true, Some(_)) => {}
+        }
         self
     }
 
@@ -501,6 +528,36 @@ impl Config {
         self
     }
 
+    /// Configures the maximum number of WebAssembly frames to collect in
+    /// backtraces.
+    ///
+    /// A backtrace may be collected whenever an error is returned from a host
+    /// function call through to WebAssembly or when WebAssembly itself hits a
+    /// trap condition, such as an out-of-bounds memory access. This flag
+    /// indicates, in these conditions, whether the backtrace is collected or
+    /// not and how many frames should be collected.
+    ///
+    /// Currently wasm backtraces are implemented through frame pointer walking.
+    /// This means that collecting a backtrace is expected to be a fast and
+    /// relatively cheap operation. Additionally backtrace collection is
+    /// suitable in concurrent environments since one thread capturing a
+    /// backtrace won't block other threads.
+    ///
+    /// Collected backtraces are attached via
+    /// [`Error::context`](crate::Error::context) to errors returned from host
+    /// functions. The [`WasmBacktrace`] type can be acquired via
+    /// [`Error::downcast_ref`](crate::Error::downcast_ref) to inspect the
+    /// backtrace. When this option is set to `None` then this context is never
+    /// applied to errors coming out of wasm.
+    ///
+    /// The default value is 20.
+    ///
+    /// [`WasmBacktrace`]: crate::WasmBacktrace
+    pub fn wasm_backtrace_max_frames(&mut self, limit: Option<NonZeroUsize>) -> &mut Self {
+        self.wasm_backtrace_max_frames = limit;
+        self
+    }
+
     /// Configures whether to generate native unwind information
     /// (e.g. `.eh_frame` on Linux).
     ///
@@ -508,8 +565,8 @@ impl Config {
     /// capturing mechanisms, such as the system's unwinder or the `backtrace`
     /// crate, determine how to unwind through Wasm frames. It does not affect
     /// whether Wasmtime can capture Wasm backtraces or not. The presence of
-    /// [`WasmBacktrace`] is controlled by the [`Config::wasm_backtrace`]
-    /// option.
+    /// [`WasmBacktrace`] is controlled by the
+    /// [`Config::wasm_backtrace_max_frames`] option.
     ///
     /// Native unwind information is included:
     /// - When targeting Windows, since the Windows ABI requires it.
@@ -547,6 +604,14 @@ impl Config {
     /// [`Store`]: crate::Store
     pub fn consume_fuel(&mut self, enable: bool) -> &mut Self {
         self.tunables.consume_fuel = Some(enable);
+        self
+    }
+
+    /// Configures the fuel cost of each WebAssembly operator.
+    ///
+    /// This is only relevant when [`Config::consume_fuel`] is enabled.
+    pub fn operator_cost(&mut self, cost: OperatorCost) -> &mut Self {
+        self.tunables.operator_cost = Some(OperatorCostStrategy::table(cost));
         self
     }
 
@@ -1210,7 +1275,7 @@ impl Config {
     /// incomplete.
     #[cfg(feature = "component-model")]
     pub fn wasm_component_model_fixed_length_lists(&mut self, enable: bool) -> &mut Self {
-        self.wasm_features(WasmFeatures::CM_FIXED_SIZE_LIST, enable);
+        self.wasm_features(WasmFeatures::CM_FIXED_LENGTH_LISTS, enable);
         self
     }
 
@@ -2183,7 +2248,7 @@ impl Config {
             | WasmFeatures::CM_THREADING
             | WasmFeatures::CM_ERROR_CONTEXT
             | WasmFeatures::CM_GC
-            | WasmFeatures::CM_FIXED_SIZE_LIST;
+            | WasmFeatures::CM_FIXED_LENGTH_LISTS;
 
         #[allow(unused_mut, reason = "easier to avoid #[cfg]")]
         let mut unsupported = !features_known_to_wasmtime;
@@ -2356,11 +2421,24 @@ impl Config {
             bail!("exceptions support requires garbage collection (GC) to be enabled in the build");
         }
 
+        match &self.rr_config {
+            #[cfg(feature = "rr")]
+            RRConfig::Recording | RRConfig::Replaying => {
+                self.validate_rr_determinism_conflicts()?;
+            }
+            RRConfig::None => {}
+        };
+
         let mut tunables = Tunables::default_for_target(&self.compiler_target())?;
 
         // By default this is enabled with the Cargo feature, and if the feature
         // is missing this is disabled.
         tunables.concurrency_support = cfg!(feature = "component-model-async");
+
+        #[cfg(feature = "rr")]
+        {
+            tunables.recording = matches!(self.rr_config, RRConfig::Recording);
+        }
 
         // If no target is explicitly specified then further refine `tunables`
         // for the configuration of this host depending on what platform
@@ -2975,6 +3053,44 @@ impl Config {
     /// [`StreamReader`]: crate::component::StreamReader
     pub fn concurrency_support(&mut self, enable: bool) -> &mut Self {
         self.tunables.concurrency_support = Some(enable);
+        self
+    }
+
+    /// Validate if the current configuration has conflicting overrides that prevent
+    /// execution determinism. Returns an error if a conflict exists.
+    ///
+    /// Note: Keep this in sync with [`Config::enforce_determinism`].
+    #[inline]
+    #[cfg(feature = "rr")]
+    pub(crate) fn validate_rr_determinism_conflicts(&self) -> Result<()> {
+        if let Some(v) = self.tunables.relaxed_simd_deterministic {
+            if v == false {
+                bail!("Relaxed deterministic SIMD cannot be disabled when determinism is enforced");
+            }
+        }
+        #[cfg(any(feature = "cranelift", feature = "winch"))]
+        if let Some(v) = self
+            .compiler_config
+            .as_ref()
+            .and_then(|c| c.settings.get("enable_nan_canonicalization"))
+        {
+            if v != "true" {
+                bail!("NaN canonicalization cannot be disabled when determinism is enforced");
+            }
+        }
+        Ok(())
+    }
+
+    /// Enable execution trace recording or replaying to the configuration.
+    ///
+    /// When either recording/replaying are enabled, validation fails if settings
+    /// that control determinism are not set appropriately. In particular, RR requires
+    /// doing the following:
+    /// * Enabling NaN canonicalization with [`Config::cranelift_nan_canonicalization`].
+    /// * Enabling deterministic relaxed SIMD with [`Config::relaxed_simd_deterministic`].
+    #[inline]
+    pub fn rr(&mut self, cfg: RRConfig) -> &mut Self {
+        self.rr_config = cfg;
         self
     }
 }

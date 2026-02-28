@@ -365,12 +365,6 @@
 //!   with the same overhead as the `call-hook` feature where entries/exits into
 //!   WebAssembly will have more overhead than before.
 //!
-//! * `signals-based-traps` - Enabled by default, this enables support for using
-//!   host signal handlers to implement WebAssembly traps. For example virtual
-//!   memory is used to catch out-of-bounds accesses in WebAssembly that result
-//!   in segfaults. This is implicitly enabled by the `std` feature and is the
-//!   best way to get high-performance WebAssembly.
-//!
 //! More crate features can be found in the [manifest] of Wasmtime itself for
 //! seeing what can be enabled and disabled.
 //!
@@ -409,12 +403,19 @@
 extern crate std;
 extern crate alloc;
 
-pub(crate) mod prelude {
-    pub use crate::error::{Context, Error, Result, bail, ensure, format_err};
-    pub use wasmtime_environ::prelude::*;
-}
+// Internal `use` statement which isn't used in this module but enable
+// `use crate::prelude::*;` everywhere else within this crate, for example.
+use wasmtime_environ::prelude;
 
-pub(crate) use hashbrown::{hash_map, hash_set};
+// FIXME(#12069) should transition to OOM-handling versions of these collections
+// for all internal usage instead of using abort-on-OOM versions. Once that's
+// done this can be removed and the collections should be directly imported from
+// `wasmtime_environ::collections::*`.
+#[allow(
+    unused_imports,
+    reason = "not all build configs use these; easier to allow than to precisely `cfg`"
+)]
+use wasmtime_environ::collections::oom_abort::{hash_map, hash_set};
 
 /// A helper macro to safely map `MaybeUninit<T>` to `MaybeUninit<U>` where `U`
 /// is a field projection within `T`.
@@ -508,11 +509,10 @@ mod sync_nostd;
 #[cfg(not(feature = "std"))]
 use sync_nostd as sync;
 
+pub use wasmtime_environ::OperatorCost;
+pub use wasmtime_environ::ToWasmtimeResult;
 #[doc(inline)]
 pub use wasmtime_environ::error;
-
-#[cfg(feature = "anyhow")]
-pub use wasmtime_environ::ToWasmtimeResult;
 
 // Only for use in `bindgen!`-generated code.
 #[doc(hidden)]

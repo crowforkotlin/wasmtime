@@ -1,10 +1,9 @@
 use std::iter;
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
-use std::time::Duration;
 
 use super::util::{config, make_component};
 use component_async_tests::Ctx;
-use component_async_tests::util::sleep;
+use component_async_tests::util::yield_times;
 use futures::{
     FutureExt,
     stream::{FuturesUnordered, TryStreamExt},
@@ -338,7 +337,7 @@ async fn test_round_trip_many(
             .instance("local:local/many")?
             .func_new_concurrent("foo", |_, _, params, results| {
                 Box::pin(async move {
-                    sleep(Duration::from_millis(10)).await;
+                    yield_times(5).await;
                     let mut params = params.into_iter();
                     let Some(Val::String(s)) = params.next() else {
                         unreachable!()
@@ -425,7 +424,6 @@ async fn test_round_trip_many(
                     unreachable!()
                 };
                 assert_eq!(&make(expected), actual);
-                foo_function.post_return_async(&mut store).await?;
             }
 
             store.assert_concurrent_state_empty();

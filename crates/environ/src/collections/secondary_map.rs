@@ -1,4 +1,4 @@
-use crate::error::OutOfMemory;
+use crate::{collections::Vec, error::OutOfMemory};
 use core::{fmt, ops::Index};
 use cranelift_entity::{EntityRef, SecondaryMap as Inner};
 
@@ -27,6 +27,8 @@ where
     V: Clone,
 {
     /// Same as [`cranelift_entity::SecondaryMap::new`].
+    ///
+    /// XXX: `Clone::clone(&<V as Default>::default())` should never allocate.
     pub fn new() -> Self
     where
         V: Default,
@@ -37,6 +39,8 @@ where
     }
 
     /// Same as [`cranelift_entity::SecondaryMap::try_with_capacity`].
+    ///
+    /// XXX: `Clone::clone(&<V as Default>::default())` should never allocate.
     pub fn with_capacity(capacity: usize) -> Result<Self, OutOfMemory>
     where
         V: Default,
@@ -47,6 +51,8 @@ where
     }
 
     /// Same as [`cranelift_entity::SecondaryMap::with_default`].
+    ///
+    /// XXX: `Clone::clone(&default)` should never allocate.
     pub fn with_default(default: V) -> Self {
         Self {
             inner: Inner::with_default(default),
@@ -140,5 +146,156 @@ where
 
     fn index(&self, k: K) -> &V {
         &self.inner[k]
+    }
+}
+
+impl<K, V> From<Vec<V>> for SecondaryMap<K, V>
+where
+    K: EntityRef,
+    V: Clone + Default,
+{
+    fn from(values: Vec<V>) -> Self {
+        let values: alloc::vec::Vec<V> = values.into();
+        let inner = Inner::from(values);
+        Self { inner }
+    }
+}
+
+impl<K, V> serde::ser::Serialize for SecondaryMap<K, V>
+where
+    K: EntityRef,
+    V: Clone + PartialEq + serde::ser::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeSeq as _;
+
+        // Ignore any trailing default values.
+        let mut len = self.inner.as_values_slice().len();
+        while len > 0 && &self[K::new(len - 1)] == self.inner.default_value() {
+            len -= 1;
+        }
+
+        // Plus one for the default value.
+        let mut seq = serializer.serialize_seq(Some(len + 1))?;
+
+        // Always serialize the default value first.
+        seq.serialize_element(self.inner.default_value())?;
+
+        for elem in self.values().take(len) {
+            let elem = if elem == self.inner.default_value() {
+                None
+            } else {
+                Some(elem)
+            };
+            seq.serialize_element(&elem)?;
+        }
+
+        seq.end()
+    }
+}
+
+impl<'de, K, V> serde::de::Deserialize<'de> for SecondaryMap<K, V>
+where
+    K: EntityRef,
+    V: Clone + serde::de::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor<K, V>(core::marker::PhantomData<fn() -> SecondaryMap<K, V>>)
+        where
+            K: EntityRef,
+            V: Clone;
+
+        impl<'de, K, V> serde::de::Visitor<'de> for Visitor<K, V>
+        where
+            K: EntityRef,
+            V: Clone + serde::de::Deserialize<'de>,
+        {
+            type Value = SecondaryMap<K, V>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("struct SecondaryMap")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                // Minus one to account for the default element, which is always
+                // the first in the sequence.
+                let size_hint = seq.size_hint().and_then(|n| n.checked_sub(1));
+
+                let Some(default) = seq.next_element::<V>()? else {
+                    return Err(serde::de::Error::custom("Default value required"));
+                };
+
+                let mut map = SecondaryMap::<K, V>::with_default(default.clone());
+
+                if let Some(n) = size_hint {
+                    map.resize(n).map_err(|oom| serde::de::Error::custom(oom))?;
+                }
+
+                let mut idx = 0;
+                while let Some(val) = seq.next_element::<Option<V>>()? {
+                    let key = K::new(idx);
+                    let val = match val {
+                        None => default.clone(),
+                        Some(val) => val,
+                    };
+
+                    map.insert(key, val)
+                        .map_err(|oom| serde::de::Error::custom(oom))?;
+
+                    idx += 1;
+                }
+
+                Ok(map)
+            }
+        }
+
+        deserializer.deserialize_seq(Visitor(core::marker::PhantomData))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Result;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct K(u32);
+    crate::entity_impl!(K);
+
+    fn k(i: usize) -> K {
+        K::new(i)
+    }
+
+    #[test]
+    fn serialize_deserialize() -> Result<()> {
+        let mut map = SecondaryMap::<K, u32>::with_default(99);
+        map.insert(k(0), 33)?;
+        map.insert(k(1), 44)?;
+        map.insert(k(2), 55)?;
+        map.insert(k(3), 99)?;
+        map.insert(k(4), 99)?;
+
+        let bytes = postcard::to_allocvec(&map)?;
+        let map2: SecondaryMap<K, u32> = postcard::from_bytes(&bytes)?;
+
+        for i in 0..10 {
+            assert_eq!(map[k(i)], map2[k(i)]);
+        }
+
+        // Trailing default entries were omitted from the serialization.
+        assert_eq!(map2.keys().collect::<Vec<_>>(), vec![k(0), k(1), k(2)]);
+
+        Ok(())
     }
 }

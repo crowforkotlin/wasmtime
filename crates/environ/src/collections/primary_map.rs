@@ -1,13 +1,14 @@
+use crate::{collections::TryExtend, error::OutOfMemory};
 use core::{
     fmt,
     ops::{Index, IndexMut},
 };
 use cranelift_entity::EntityRef;
-use wasmtime_core::error::OutOfMemory;
+use serde::{Serialize, ser::SerializeSeq};
 
 /// Like [`cranelift_entity::PrimaryMap`] but enforces fallible allocation for
 /// all methods that allocate.
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq)]
 pub struct PrimaryMap<K, V>
 where
     K: EntityRef,
@@ -33,6 +34,48 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+impl<K, V> From<crate::collections::Vec<V>> for PrimaryMap<K, V>
+where
+    K: EntityRef,
+{
+    fn from(values: crate::collections::Vec<V>) -> Self {
+        let values: ::alloc::vec::Vec<V> = values.into();
+        let inner = cranelift_entity::PrimaryMap::from(values);
+        Self { inner }
+    }
+}
+
+impl<K, V> serde::ser::Serialize for PrimaryMap<K, V>
+where
+    K: EntityRef,
+    V: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.len()))?;
+        for val in self.values() {
+            seq.serialize_element(val)?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de, K, V> serde::de::Deserialize<'de> for PrimaryMap<K, V>
+where
+    K: EntityRef,
+    V: serde::de::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v: crate::collections::Vec<V> = serde::de::Deserialize::deserialize(deserializer)?;
+        Ok(Self::from(v))
     }
 }
 
@@ -174,6 +217,25 @@ where
     }
 }
 
+impl<K, V> TryExtend<V> for PrimaryMap<K, V>
+where
+    K: EntityRef,
+{
+    fn try_extend<I>(&mut self, iter: I) -> Result<(), OutOfMemory>
+    where
+        I: IntoIterator<Item = V>,
+    {
+        let iter = iter.into_iter();
+        let (min, max) = iter.size_hint();
+        let cap = max.unwrap_or(min);
+        self.reserve(cap)?;
+        for v in iter {
+            self.push(v)?;
+        }
+        Ok(())
+    }
+}
+
 impl<K, V> Index<K> for PrimaryMap<K, V>
 where
     K: EntityRef,
@@ -191,5 +253,38 @@ where
 {
     fn index_mut(&mut self, k: K) -> &mut V {
         &mut self.inner[k]
+    }
+}
+
+impl<K, V> IntoIterator for PrimaryMap<K, V>
+where
+    K: EntityRef,
+{
+    type Item = (K, V);
+    type IntoIter = cranelift_entity::IntoIter<K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a PrimaryMap<K, V>
+where
+    K: EntityRef,
+{
+    type Item = (K, &'a V);
+    type IntoIter = cranelift_entity::Iter<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a mut PrimaryMap<K, V>
+where
+    K: EntityRef,
+{
+    type Item = (K, &'a mut V);
+    type IntoIter = cranelift_entity::IterMut<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }

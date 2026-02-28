@@ -255,11 +255,13 @@ impl RunCommand {
                         linker
                             .module_async(&mut *store, name, &preload_module)
                             .await
-                            .context(format!(
-                                "failed to process preload `{}` at `{}`",
-                                name,
-                                path.display()
-                            ))?;
+                            .with_context(|| {
+                                format!(
+                                    "failed to process preload `{}` at `{}`",
+                                    name,
+                                    path.display()
+                                )
+                            })?;
                     }
                     #[cfg(not(feature = "cranelift"))]
                     CliLinker::Core(_) => {
@@ -512,10 +514,9 @@ impl RunCommand {
                 let instance = linker
                     .instantiate_async(&mut *store, &module)
                     .await
-                    .context(format!(
-                        "failed to instantiate {:?}",
-                        self.module_and_args[0]
-                    ))?;
+                    .with_context(|| {
+                        format!("failed to instantiate {:?}", self.module_and_args[0])
+                    })?;
 
                 // If `_initialize` is present, meaning a reactor, then invoke
                 // the function.
@@ -635,17 +636,12 @@ impl RunCommand {
         #[cfg(feature = "component-model-async")]
         if self.run.common.wasm.concurrency_support.unwrap_or(true) {
             store
-                .run_concurrent(async |store| {
-                    let task = func.call_concurrent(store, params, results).await?;
-                    task.block(store).await;
-                    wasmtime::error::Ok(())
-                })
+                .run_concurrent(async |store| func.call_concurrent(store, params, results).await)
                 .await??;
             return Ok(());
         }
 
         func.call_async(&mut *store, &params, results).await?;
-        func.post_return_async(&mut *store).await?;
         Ok(())
     }
 
@@ -670,11 +666,7 @@ impl RunCommand {
             if let Ok(command) = wasmtime_wasi::p3::bindings::Command::new(&mut *store, &instance) {
                 result = Some(
                     store
-                        .run_concurrent(async |store| {
-                            let (result, task) = command.wasi_cli_run().call_run(store).await?;
-                            task.block(store).await;
-                            Ok(result)
-                        })
+                        .run_concurrent(async |store| command.wasi_cli_run().call_run(store).await)
                         .await?,
                 );
             }
@@ -1065,8 +1057,8 @@ impl RunCommand {
                         }
                     }
                 }
-
-                store.data_mut().wasi_http = Some(Arc::new(WasiHttpCtx::new()));
+                let http = self.run.wasi_http_ctx()?;
+                store.data_mut().wasi_http = Some(Arc::new(http));
             }
         }
 
@@ -1161,7 +1153,13 @@ impl RunCommand {
         let mut builder = wasmtime_wasi::WasiCtxBuilder::new();
         builder.inherit_stdio().args(&self.compute_argv()?);
         self.run.configure_wasip2(&mut builder)?;
-        let ctx = builder.build_p1();
+        let mut ctx = builder.build_p1();
+        if let Some(max) = self.run.common.wasi.max_resources {
+            ctx.ctx().table.set_max_capacity(max);
+        }
+        if let Some(fuel) = self.run.common.wasi.hostcall_fuel {
+            store.set_hostcall_fuel(fuel);
+        }
         store.data_mut().wasip1_ctx = Some(Arc::new(Mutex::new(ctx)));
         Ok(())
     }
@@ -1337,7 +1335,7 @@ fn write_core_dump(
     let core_dump = core_dump.serialize(store, name);
 
     let mut core_dump_file =
-        File::create(path).context(format!("failed to create file at `{path}`"))?;
+        File::create(path).with_context(|| format!("failed to create file at `{path}`"))?;
     core_dump_file
         .write_all(&core_dump)
         .with_context(|| format!("failed to write core dump file at `{path}`"))?;

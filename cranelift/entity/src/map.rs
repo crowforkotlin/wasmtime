@@ -194,6 +194,16 @@ where
         Ok(())
     }
 
+    /// Get this map's underlying values as a slice.
+    pub fn as_values_slice(&self) -> &[V] {
+        &self.elems
+    }
+
+    /// Get this map's default value.
+    pub fn default_value(&self) -> &V {
+        &self.default
+    }
+
     /// Slow path for `index_mut` which resizes the vector.
     #[cold]
     fn resize_for_index_mut(&mut self, i: usize) -> &mut V {
@@ -209,6 +219,21 @@ where
 {
     fn default() -> SecondaryMap<K, V> {
         SecondaryMap::new()
+    }
+}
+
+impl<K, V> From<Vec<V>> for SecondaryMap<K, V>
+where
+    K: EntityRef,
+    V: Clone + Default,
+{
+    fn from(elems: Vec<V>) -> Self {
+        let default = Default::default();
+        Self {
+            elems,
+            default,
+            unused: PhantomData,
+        }
     }
 }
 
