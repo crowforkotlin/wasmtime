@@ -26,7 +26,7 @@ fi
 build_name="${1:-x86_64-windows}"
 target="${2:-x86_64-pc-windows-msvc}"
 
-export WASMTIME_RELEASE_TAG="release-v$(bash ./ci/release-info.sh workspace-version)"
+export WASMTIME_RELEASE_TAG="release-v$(bash ./ci/wasmline/release-info.sh workspace-version)"
 
 echo ">>> Cleaning previous Wasmline release outputs..."
 rm -rf dist bins-* target/c-api-build target/c-api-install "target/$target/release"

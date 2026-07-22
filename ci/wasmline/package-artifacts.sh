@@ -28,10 +28,10 @@ trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p dist
 
 tag=dev
-if bash ./ci/release-info.sh is-release; then
-  bash ./ci/release-info.sh assert-match
-  bash ./ci/release-info.sh assert-capi-match
-  tag="$(bash ./ci/release-info.sh artifact-tag)"
+if bash ./ci/wasmline/release-info.sh is-release; then
+  bash ./ci/wasmline/release-info.sh assert-match
+  bash ./ci/wasmline/release-info.sh assert-capi-match
+  tag="$(bash ./ci/wasmline/release-info.sh artifact-tag)"
 fi
 
 # Derive package name parts from build name.
