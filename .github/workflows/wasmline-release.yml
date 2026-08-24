@@ -1,0 +1,224 @@
+name: Wasmline Wasmtime Release
+run-name: ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*.*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasmline-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    if: github.repository == 'crowforkotlin/wasmtime'
+    runs-on: ubuntu-latest
+    outputs:
+      upstream_version: ${{ steps.release.outputs.upstream_version }}
+      downstream_revision: ${{ steps.release.outputs.downstream_revision }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate release metadata
+        id: release
+        env:
+          WASMLINE_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          bash ./ci/wasmline/test-release-info.sh
+          bash ./ci/wasmline/release-info.sh validate-tag
+          bash ./ci/wasmline/release-info.sh assert-match
+          bash ./ci/wasmline/release-info.sh assert-capi-match
+          bash ./ci/wasmline/release-info.sh assert-workspace-deps-match
+          echo "upstream_version=$(bash ./ci/wasmline/release-info.sh upstream-version)" >> "$GITHUB_OUTPUT"
+          echo "downstream_revision=$(bash ./ci/wasmline/release-info.sh downstream-revision)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.build }}
+    if: github.repository == 'crowforkotlin/wasmtime'
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: x86_64-windows
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+
+          - build: x86_64-linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: aarch64-linux
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+
+          - build: x86_64-macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - build: aarch64-macos
+            os: macos-latest
+            target: aarch64-apple-darwin
+
+          - build: aarch64-android
+            os: ubuntu-latest
+            target: aarch64-linux-android
+          - build: x86_64-android
+            os: ubuntu-latest
+            target: x86_64-linux-android
+          - build: armv7-android
+            os: ubuntu-latest
+            target: armv7-linux-androideabi
+          - build: x86-android
+            os: ubuntu-latest
+            target: i686-linux-android
+
+          - build: aarch64-ios
+            os: macos-latest
+            target: aarch64-apple-ios
+          - build: aarch64-ios-sim
+            os: macos-latest
+            target: aarch64-apple-ios-sim
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Prepare shell scripts
+        run: find ci -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          targets: ${{ matrix.target }}
+          components: rust-src
+
+      - name: Install Ninja
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Linux AArch64 toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> "$GITHUB_ENV"
+
+      - name: Configure Android toolchain
+        if: contains(matrix.target, 'android')
+        run: |
+          if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
+            echo "ANDROID_NDK_HOME is not set" >&2
+            exit 1
+          fi
+
+          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          api=24
+          case "${{ matrix.target }}" in
+            aarch64-linux-android)
+              echo "CC_aarch64_linux_android=$toolchain/aarch64-linux-android${api}-clang" >> "$GITHUB_ENV"
+              echo "CXX_aarch64_linux_android=$toolchain/aarch64-linux-android${api}-clang++" >> "$GITHUB_ENV"
+              echo "AR_aarch64_linux_android=$toolchain/llvm-ar" >> "$GITHUB_ENV"
+              echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$toolchain/aarch64-linux-android${api}-clang" >> "$GITHUB_ENV"
+              ;;
+            x86_64-linux-android)
+              echo "CC_x86_64_linux_android=$toolchain/x86_64-linux-android${api}-clang" >> "$GITHUB_ENV"
+              echo "CXX_x86_64_linux_android=$toolchain/x86_64-linux-android${api}-clang++" >> "$GITHUB_ENV"
+              echo "AR_x86_64_linux_android=$toolchain/llvm-ar" >> "$GITHUB_ENV"
+              echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$toolchain/x86_64-linux-android${api}-clang" >> "$GITHUB_ENV"
+              ;;
+            armv7-linux-androideabi)
+              echo "CC_armv7_linux_androideabi=$toolchain/armv7a-linux-androideabi${api}-clang" >> "$GITHUB_ENV"
+              echo "CXX_armv7_linux_androideabi=$toolchain/armv7a-linux-androideabi${api}-clang++" >> "$GITHUB_ENV"
+              echo "AR_armv7_linux_androideabi=$toolchain/llvm-ar" >> "$GITHUB_ENV"
+              echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$toolchain/armv7a-linux-androideabi${api}-clang" >> "$GITHUB_ENV"
+              ;;
+            i686-linux-android)
+              echo "CC_i686_linux_android=$toolchain/i686-linux-android${api}-clang" >> "$GITHUB_ENV"
+              echo "CXX_i686_linux_android=$toolchain/i686-linux-android${api}-clang++" >> "$GITHUB_ENV"
+              echo "AR_i686_linux_android=$toolchain/llvm-ar" >> "$GITHUB_ENV"
+              echo "CARGO_TARGET_I686_LINUX_ANDROID_LINKER=$toolchain/i686-linux-android${api}-clang" >> "$GITHUB_ENV"
+              ;;
+          esac
+          echo "RUSTFLAGS=${RUSTFLAGS:-} -C link-arg=-z -C link-arg=max-page-size=16384" >> "$GITHUB_ENV"
+
+      - name: Build Wasmline bundles
+        env:
+          WASMLINE_RELEASE_TAG: ${{ github.ref_name }}
+        run: ./ci/wasmline/build-target-release.sh "${{ matrix.build }}" "${{ matrix.target }}"
+
+      - name: Upload staged bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasmline-${{ matrix.build }}
+          path: bins-*/**
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish GitHub Release
+    if: github.repository == 'crowforkotlin/wasmtime'
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare shell scripts
+        run: find ci -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Download staged bundles
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+
+      - name: Merge bundles and create checksums
+        run: |
+          mv artifacts/wasmline-*/bins-* .
+          ./ci/wasmline/merge-artifacts.sh
+          test -n "$(find dist -maxdepth 1 -type f -print -quit)"
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Write release notes
+        env:
+          UPSTREAM_VERSION: ${{ needs.validate.outputs.upstream_version }}
+          DOWNSTREAM_REVISION: ${{ needs.validate.outputs.downstream_revision }}
+        run: |
+          {
+            echo "Wasmline downstream build of Wasmtime v${UPSTREAM_VERSION}."
+            echo
+            echo "- Upstream version: v${UPSTREAM_VERSION}"
+            echo "- Wasmline revision: ${DOWNSTREAM_REVISION}"
+            echo "- Source commit: ${GITHUB_SHA}"
+            echo
+            echo "Use SHA256SUMS to verify downloaded assets."
+          } > release-notes.md
+
+      - name: Create immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            dist/*
