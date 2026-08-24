@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upstream_version: ${{ steps.release.outputs.upstream_version }}
-      downstream_revision: ${{ steps.release.outputs.downstream_revision }}
     steps:
       - uses: actions/checkout@v6
 
@@ -35,7 +34,6 @@ jobs:
           bash ./ci/wasmline/release-info.sh assert-capi-match
           bash ./ci/wasmline/release-info.sh assert-workspace-deps-match
           echo "upstream_version=$(bash ./ci/wasmline/release-info.sh upstream-version)" >> "$GITHUB_OUTPUT"
-          echo "downstream_revision=$(bash ./ci/wasmline/release-info.sh downstream-revision)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.build }}
@@ -197,13 +195,11 @@ jobs:
       - name: Write release notes
         env:
           UPSTREAM_VERSION: ${{ needs.validate.outputs.upstream_version }}
-          DOWNSTREAM_REVISION: ${{ needs.validate.outputs.downstream_revision }}
         run: |
           {
             echo "Wasmline downstream build of Wasmtime v${UPSTREAM_VERSION}."
             echo
             echo "- Upstream version: v${UPSTREAM_VERSION}"
-            echo "- Wasmline revision: ${DOWNSTREAM_REVISION}"
             echo "- Source commit: ${GITHUB_SHA}"
             echo
             echo "Use SHA256SUMS to verify downloaded assets."
